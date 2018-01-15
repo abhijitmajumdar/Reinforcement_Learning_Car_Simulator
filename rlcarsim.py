@@ -5,7 +5,7 @@ import os
 
 # Define the cars
 # For training only one car is used(First one). For run_only all cars are simulated.
-# For a change in dynamics of the car (car size, limits, sensor range, sensor position and sensor angle), make sure the algorithm is trained first.
+# For a change in dynamics of the car: initial state -> position and orientation(radians), car size, limits, sensor range and sensor angle(randians), make sure the algorithm is trained first.
 cars = [
     { 'id':1, 'state':[1,0.3,0], 'L':0.3, 'W':0.1, 'v':1, 'v_limit':2 ,'gamma':-0.15, 'gamma_limit':0.61, 'sensors':[{'range':1.0,'angle':0.53},{'range':1.0,'angle':0},{'range':1.0,'angle':-0.53}] },
     { 'id':2, 'state':[0.4,0.3,1], 'L':0.3, 'W':0.1, 'v':1, 'v_limit':2 ,'gamma':-0.15, 'gamma_limit':0.61, 'sensors':[{'range':1.0,'angle':0.53},{'range':1.0,'angle':0},{'range':1.0,'angle':-0.53}] },
@@ -206,7 +206,3 @@ if __name__=='__main__':
         user_control(track_select=args.track)
     elif args.control=='nn':
         reinfrocement_neural_network_control(load_weights=args.load_weights,run_only=args.run_only,track_select=args.track,random_seed=args.random_seed,rl_prams=rl_parameters)
-
-'''
-Good random seeds: 57,62,39,427
-'''
