@@ -7,12 +7,12 @@ import os
 # For training only one car is used(First one). For run_only all cars are simulated.
 # For a change in dynamics of the car: initial state -> position and orientation(radians), car size, limits, sensor range and sensor angle(randians), make sure the algorithm is trained first.
 cars = [
-    { 'id':1, 'state':[1,0.3,0], 'L':0.3, 'W':0.1, 'v':1, 'v_limit':2 ,'gamma':-0.15, 'gamma_limit':0.61, 'sensors':[{'range':1.0,'angle':0.53},{'range':1.0,'angle':0},{'range':1.0,'angle':-0.53}] },
-    { 'id':2, 'state':[0.4,0.3,1], 'L':0.3, 'W':0.1, 'v':1, 'v_limit':2 ,'gamma':-0.15, 'gamma_limit':0.61, 'sensors':[{'range':1.0,'angle':0.53},{'range':1.0,'angle':0},{'range':1.0,'angle':-0.53}] },
-    { 'id':3, 'state':[3,0.3,-1], 'L':0.3, 'W':0.1, 'v':1, 'v_limit':2 ,'gamma':-0.15, 'gamma_limit':0.61, 'sensors':[{'range':1.0,'angle':0.53},{'range':1.0,'angle':0},{'range':1.0,'angle':-0.53}] },
-    { 'id':4, 'state':[1.5,0.4,-3], 'L':0.3, 'W':0.1, 'v':1, 'v_limit':2 ,'gamma':-0.15, 'gamma_limit':0.61, 'sensors':[{'range':1.0,'angle':0.53},{'range':1.0,'angle':0},{'range':1.0,'angle':-0.53}] },
-    { 'id':5, 'state':[2,0.3,3], 'L':0.3, 'W':0.1, 'v':1, 'v_limit':2 ,'gamma':-0.15, 'gamma_limit':0.61, 'sensors':[{'range':1.0,'angle':0.53},{'range':1.0,'angle':0},{'range':1.0,'angle':-0.53}] },
-    { 'id':6, 'state':[1,0.5,-3.14], 'L':0.3, 'W':0.1, 'v':1, 'v_limit':2 ,'gamma':-0.15, 'gamma_limit':0.61, 'sensors':[{'range':1.0,'angle':0.53},{'range':1.0,'angle':0},{'range':1.0,'angle':-0.53}] },
+    { 'id':1, 'state':[1,0.3,0], 'L':0.3, 'W':0.1, 'v_limit':2 , 'gamma_limit':0.61, 'sensors':[{'range':2.0,'angle':0.53},{'range':2.0,'angle':0},{'range':2.0,'angle':-0.53}] },
+    { 'id':2, 'state':[0.4,0.3,1], 'L':0.3, 'W':0.1, 'v_limit':2 , 'gamma_limit':0.61, 'sensors':[{'range':2.0,'angle':0.53},{'range':2.0,'angle':0},{'range':2.0,'angle':-0.53}] },
+    { 'id':3, 'state':[3,0.3,-0.4], 'L':0.3, 'W':0.1, 'v_limit':2 , 'gamma_limit':0.61, 'sensors':[{'range':2.0,'angle':0.53},{'range':2.0,'angle':0},{'range':2.0,'angle':-0.53}] },
+    { 'id':4, 'state':[1.5,0.4,-0.1], 'L':0.3, 'W':0.1, 'v_limit':2 , 'gamma_limit':0.61, 'sensors':[{'range':2.0,'angle':0.53},{'range':2.0,'angle':0},{'range':2.0,'angle':-0.53}] },
+    { 'id':5, 'state':[2,0.3,0.3], 'L':0.3, 'W':0.1, 'v_limit':2 , 'gamma_limit':0.61, 'sensors':[{'range':2.0,'angle':0.53},{'range':2.0,'angle':0},{'range':2.0,'angle':-0.53}] },
+    { 'id':6, 'state':[1,0.5,0.7], 'L':0.3, 'W':0.1, 'v_limit':2 , 'gamma_limit':0.61, 'sensors':[{'range':2.0,'angle':0.53},{'range':2.0,'angle':0},{'range':2.0,'angle':-0.53}] },
 ]
 
 # Different track definitions.
@@ -30,20 +30,22 @@ track = {
 # Paramerters used by the reinforcement learning algorithm
 rl_parameters = {
     'actions':[(0.5,0),(0.5,0.6),(0.5,-0.6),(1.5,0),(1.5,0.1),(1.5,-0.1)], # Possible actions the agent can take: list of (velocity,steering) tuples
-    'epsilon':0.76, # Initial epsilon value to start traingin with
-    'max_epsilon':0.98, # Maximum epsilon value to be set as the agent learns
-    'epsilon_step':0.02, # Increment to epsilon after every epoch(termination of a run)
-    'gamma':0.5, # Discount factor
+    'epsilon':0.0,#0.5 # Initial epsilon value to start traingin with
+    'max_epsilon':0.9,#0.93 # Maximum epsilon value to be set as the agent learns
+    'epsilon_step':0.0015,#0.0004 # Increment to epsilon after every epoch(termination of a run)
+    'gamma':0.99, # Discount factor
     'lr_alpha':0.001, # Learning rate for back proportion update of neural netwrok
     'leak_alpha':0.3, # Used by the LeakyReLU activation function after each layer in the NN
     'max_steps':1000, # Timout for the cars to comlete the track, to avoid them going round and round in circles
-    'collision_reward':-500, # Reward offered if car collides
-    'timeup_reward':-500, # Reward offered if time runs out
-    'destination_reward':300, # Reward offered if car completes the track
-    'buffer_length':30000, # Size of replay memory to train the NN
+    'collision_reward':-1, # Reward offered if car collides
+    'timeup_reward':-1, # Reward offered if time runs out
+    'destination_reward':1, # Reward offered if car completes the track
+    'buffer_length':300000, # Size of replay memory to train the NN
+    'replay_start_at':30000, # When to start using replay to learn
     'batchsize':256, # Size of batch to process weight update, varied based on CPU/GPU resources available
     'minibatchsize':256, # Size of batch to update weight at each step. Large values learn more but are slower to process
-    'state_dimension':3 #len(cars[0]['sensors']) -> Number of sensors on the 1st car
+    'state_dimension':3, #len(cars[0]['sensors']) -> Number of sensors on the 1st car
+    'random_car_position':False
 }
 
 # Dynamics and control update rate
@@ -156,6 +158,10 @@ def reinfrocement_neural_network_control(load_weights=None,run_only=False,track_
         return None
 
     initialize(run_state=run)
+    ######### REMOVE THIS TIME WHILE COMMITING
+    import time
+    time.sleep(10)
+    #########
     while(1):
         new_run_state = check_run_button(current_state=run)
         if new_run_state is not None: run=new_run_state
@@ -189,6 +195,23 @@ def reinfrocement_neural_network_control(load_weights=None,run_only=False,track_
             else:
                 gui.update(0,car_objects[0].get_state(),draw_car=False)
 
+def make_parameter_changes(args):
+    if args.add_more_sensors is True:
+        for i in range(len(cars)):
+            cars[i]['sensors'] = [{'range':2.0,'angle':1.0},{'range':2.0,'angle':0.53},{'range':2.0,'angle':0},{'range':2.0,'angle':-0.53},{'range':2.0,'angle':-1.0}]
+        rl_parameters['state_dimension'] = len(cars[0]['sensors'])
+    if args.sensor_length is not None:
+        if args.sensor_length=='long':
+            for i in range(len(cars)):
+                for j in range(len(cars[i]['sensors'])):
+                    cars[i]['sensors'][j]['range'] = 2.0
+        elif args.sensor_length=='short':
+            for i in range(len(cars)):
+                for j in range(len(cars[i]['sensors'])):
+                    cars[i]['sensors'][j]['range'] = 1.0
+    if args.random_car_position is True:
+        rl_parameters['random_car_position'] = True
+
 def parse_args():
     parser = argparse.ArgumentParser(description="RL-Car Project")
     parser.add_argument("--control", help="static/user/nn",default='static')
@@ -196,10 +219,14 @@ def parse_args():
     parser.add_argument("--load_weights", help="path to load saved weights, or \'all\' to load all available weights in succession")
     parser.add_argument("--track", help="L/ME/S/SE/SS",default='SS')
     parser.add_argument("--random_seed", help="Run reproducable results", default=None, type=int)
+    parser.add_argument("--sensor_length", help="short/long",default=None)
+    parser.add_argument("--random_car_position", dest='random_car_position', action='store_true', help="Initialize car position randomly while training")
+    parser.add_argument("--add_more_sensors", dest='add_more_sensors', action='store_true', help="Add 2 more sensors at +-60deg to improve state representation")
     return parser.parse_args()
 
 if __name__=='__main__':
     args = parse_args()
+    make_parameter_changes(args)
     if args.control=='static':
         static_control(track_select=args.track)
     elif args.control=='user':

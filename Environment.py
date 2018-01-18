@@ -30,6 +30,11 @@ class Vector():
     def length(self):
         return math.sqrt(self.vector.x**2 + self.vector.y**2)
 
+    def angle(self):
+        if self.vector.x==0:
+            return 0.0
+        return math.atan(self.vector.y/self.vector.x)
+
     def __add__(self,vec):
         return Vector(self.point,self.vector+vec.vector)
 
@@ -122,8 +127,14 @@ class Car():
     def set_steering(self,angle):
         self.gamma = self.constrain(angle,-self.detail['gamma_limit'],self.detail['gamma_limit'])
 
+    def get_steering(self):
+        return self.gamma 
+
     def set_velocity(self,velocity):
         self.v = self.constrain(velocity,-self.detail['v_limit'],self.detail['v_limit'])
+
+    def get_velocity(self):
+        return self.v
 
     def set_state(self,state):
         self.x,self.y,self.theta = state
@@ -151,6 +162,8 @@ class Car():
 class Environment():
     def __init__(self,environment_details,max_steps):
         self.max_steps = max_steps
+        self.track_width = environment_details['track_width']
+        self.start_angle = environment_details['start_angle']
         self.border_segments = []
         self.route = [Point(i) for i in environment_details['path']]
         self.route_segments = []
@@ -238,6 +251,7 @@ def track_generator(track_dict,track_select):
     track_dict['path'] = track_dict[track_select][:]
     path = track_dict['path']
     d = track_dict['track_width']
+    start_angle = 0.0
     side_L,side_R = [],[]
     for i in range(len(path)):
         p1,p2,p3 = None,Point(path[i]),None
@@ -245,6 +259,7 @@ def track_generator(track_dict,track_select):
             p3 = Point(path[i+1])
             u = Vector(p3,p2).unit_vector()
             p1 = u.vector*d + p2
+            start_angle = Vector(p2,p3).angle()
         elif i==(len(path)-1):
             p1 = Point(path[i-1])
             u = Vector(p1,p2).unit_vector()
@@ -257,3 +272,4 @@ def track_generator(track_dict,track_select):
         side_L.append((pl.x,pl.y))
         side_R.append((pr.x,pr.y))
     track_dict['points'] = side_R + side_L[::-1]
+    track_dict['start_angle'] = start_angle

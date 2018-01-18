@@ -53,14 +53,14 @@ class QLearning_NN():
             reward = self.parameters['timeup_reward']
         elif agent.state == 'collided':
             reward = self.parameters['collision_reward']
-        #elif agent.state == 'destination':
-            #reward = self.parameters['destination_reward']
+        elif agent.state == 'destination':
+            reward = self.parameters['destination_reward']
         else:
             #reward = 0
-            reward = agent.score # Encourages the car to MOVE, not necessarily forward, infact moving in circles is encouraged
+            #reward = agent.score # Encourages the car to MOVE, not necessarily forward, infact moving in circles is encouraged
             #reward = -30+agent.score # Encourages the car to crash and end its misery
             #reward = -1 # To factor in time but encourages the car to crash and end its misery. Useful if destination reward is high
-            #reward = 0 if agent.score-agent.prev_score>0 else -1
+            reward = 1 if agent.score-agent.prev_score>0 else -1
         return reward
 
     def train_nn(self,sensor_readings,action,reward,new_sensor_readings,agent_state):
@@ -70,6 +70,7 @@ class QLearning_NN():
             self.replay_index += 1
             if self.replay_index>=self.parameters['buffer_length']: self.replay_index=0
             self.replay[self.replay_index] = ((sensor_readings,action,reward,new_sensor_readings,agent_state))
+        if (len(self.replay)>self.parameters['replay_start_at']):
             minibatch = random.sample(self.replay, self.parameters['minibatchsize'])
             mb_len = len(minibatch)
             old_states = np.zeros(shape=(mb_len, self.parameters['state_dimension']))
@@ -90,23 +91,23 @@ class QLearning_NN():
             maxQs = np.max(new_qvals, axis=1)
             y = old_qvals
             non_term_inds = np.where(car_state == 'running')[0]
-            non_term_inds = np.concatenate((non_term_inds,np.where(car_state == 'destination')[0]))
+            #non_term_inds = np.concatenate((non_term_inds,np.where(car_state == 'destination')[0]))
             term_inds = np.where(car_state == 'timeup')[0]
             term_inds = np.concatenate((term_inds,np.where(car_state == 'collided')[0]))
-            #term_inds = np.concatenate((term_inds,np.where(rewards == destination_reward)[0]))
+            term_inds = np.concatenate((term_inds,np.where(car_state == 'destination_reward')[0]))
             y[non_term_inds, old_actions[non_term_inds].astype(int)] = rewards[non_term_inds] + (self.parameters['gamma'] * maxQs[non_term_inds])
             y[term_inds, old_actions[term_inds].astype(int)] = rewards[term_inds]
             X_train = old_states
             y_train = y
             self.train_hist = self.model.fit(X_train, y_train, batch_size=self.parameters['batchsize'], epochs=1, verbose=0)
 
-    def check_terminal_state_and_log(self,agent):
+    def check_terminal_state_and_log(self,agent,env):
         self.itr += 1
         self.avg_loss = 0 if self.train_hist is None else (self.avg_loss+self.train_hist.history['loss'][0])
         terminal_state,debug_data = None,None
         if agent.state=='collided' or agent.state=='destination' or agent.state=='timeup':
             self.epoch += 1
-            if (len(self.replay)==self.parameters['buffer_length']) and self.parameters['epsilon']<self.parameters['max_epsilon']:
+            if (len(self.replay)>=self.parameters['replay_start_at']) and self.parameters['epsilon']<self.parameters['max_epsilon']:
                 self.parameters['epsilon'] += self.parameters['epsilon_step']
             self.avg_loss /= self.itr
             self.log['avg_loss'].append(self.avg_loss)
@@ -126,6 +127,8 @@ class QLearning_NN():
             self.avg_loss,self.itr = 0,0
             terminal_state = agent.get_state()
             agent.reset()
+            if self.parameters['random_car_position']==True:
+                agent.set_state([1+env.route[0].x+(env.track_width*1.2*(random.random()-0.5)),env.route[0].y+(env.track_width*1.2*(random.random()-0.5)),env.start_angle+(random.random()-0.5)])
         return terminal_state,debug_data,self.log['epoch'],self.log['avg_loss'],self.log['final_score'],self.log['cross_score']
 
     def check_terminal_state(self,agent):
@@ -141,7 +144,7 @@ class QLearning_NN():
         new_sensor_values = np.array(agent.get_sensor_reading())
         reward = self.reward_function(agent)
         self.train_nn(sensor_values,action_taken,reward,new_sensor_values,agent.state)
-        return self.check_terminal_state_and_log(agent)
+        return self.check_terminal_state_and_log(agent,env)
 
     def run_step(self,agent,env,dt):
         self.take_action(agent,dt,epsilon_override=1.0)
