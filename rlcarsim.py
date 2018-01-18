@@ -158,10 +158,6 @@ def reinfrocement_neural_network_control(load_weights=None,run_only=False,track_
         return None
 
     initialize(run_state=run)
-    ######### REMOVE THIS TIME WHILE COMMITING
-    import time
-    time.sleep(10)
-    #########
     while(1):
         new_run_state = check_run_button(current_state=run)
         if new_run_state is not None: run=new_run_state
