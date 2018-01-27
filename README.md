@@ -134,6 +134,7 @@ Determining a reward function is a major factor for the algorithm to learn the d
 The algorithms, methods and parameters used are largely influenced by the following:
 - Human-level control through deep reinforcement learning. https://www.nature.com/articles/nature14236 (With the difference in interpreting epsilon value\*)
 - Reinforcement Learning course by David Silver. http://www0.cs.ucl.ac.uk/staff/d.silver/web/Teaching.html
+- https://github.com/harvitronix/reinforcement-learning-car
 
 \*~~I think epsilon=0.7 in the epsilon-greedy policy means be greedy to follow the learned policy(determined by the action-value function) 70%(epsilon) of the time. However the epsilon used in the paper is in a reverse manner, and hence propagates from 1.0 to 0.1, while this epsilon in this project propagates from 0.76 to 0.98.~~ After inspecting the paper, I realized that the epsilon-greedy policy is with respect to exploration, and hence it makes sense to use epsilon as the probability to use random action. However, I keep the use of epsilon inverted in this project.
 
@@ -141,6 +142,7 @@ The algorithms, methods and parameters used are largely influenced by the follow
 The GUI is constructed using *Tkinter* library. It defines a window in which the cars and track is simulated in a top view fashion on the left side of the window, while the right side is organized for debugging and options. The track defined in the main file is automatically fitted into the space alloted to the left side. This means that if a much larger track is defined, the visual representation will be smaller. The right side contains buttons to select between the process of learning verses run only, along with debugging information like epoch, scores, loss, weight files etc. There is a graph representation, the contents of which can be switched using the provided buttons for *Average loss, Final score and Cross scores* respectively. The graphs can be better visualized using the provided *plot_log.py* file, an example to use this can be found in the section *Argument examples* above.
 
 ## Changes
+- Corrected destination as terminal state
 - Added a parameter replay_start_at which decides when the learning starts even before completely filling up replay, hence allowing larger replay
 - Realized epsilon-greedy was with respect to exploration, however its inverted here.
 - Found the cars to run much better with the following parameters: epsilon from 0.0 to 0.9 with steps of 0.0015, discount factor gamma:0.99, reward system of terminals as -1(collision,timeup), +1(destination) and non-terminals as -1(car score reduces), +1(car score increases). While learning the NN diverges as new values are propagated and then converges.

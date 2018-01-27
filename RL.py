@@ -94,7 +94,7 @@ class QLearning_NN():
             #non_term_inds = np.concatenate((non_term_inds,np.where(car_state == 'destination')[0]))
             term_inds = np.where(car_state == 'timeup')[0]
             term_inds = np.concatenate((term_inds,np.where(car_state == 'collided')[0]))
-            term_inds = np.concatenate((term_inds,np.where(car_state == 'destination_reward')[0]))
+            term_inds = np.concatenate((term_inds,np.where(car_state == 'destination')[0]))
             y[non_term_inds, old_actions[non_term_inds].astype(int)] = rewards[non_term_inds] + (self.parameters['gamma'] * maxQs[non_term_inds])
             y[term_inds, old_actions[term_inds].astype(int)] = rewards[term_inds]
             X_train = old_states
