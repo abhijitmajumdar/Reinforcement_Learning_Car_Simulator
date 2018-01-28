@@ -19,7 +19,7 @@ class Point():
         return math.sqrt((self.x-point.x)**2 + (self.y-point.y)**2)
 
     def __str__(self):
-        return 'P('+str(self.x)+','+str(self.y)+')'
+        return 'P('+'{0:.2f}'.format(self.x)+','+'{0:.2f}'.format(self.y)+')'
 
 class Vector():
     def __init__(self,p1,p2):
@@ -128,7 +128,7 @@ class Car():
         self.gamma = self.constrain(angle,-self.detail['gamma_limit'],self.detail['gamma_limit'])
 
     def get_steering(self):
-        return self.gamma 
+        return self.gamma
 
     def set_velocity(self,velocity):
         self.v = self.constrain(velocity,-self.detail['v_limit'],self.detail['v_limit'])
@@ -164,15 +164,22 @@ class Environment():
         self.max_steps = max_steps
         self.track_width = environment_details['track_width']
         self.start_angle = environment_details['start_angle']
-        self.border_segments = []
-        self.route = [Point(i) for i in environment_details['path']]
         self.route_segments = []
-        for i in range(1,len(self.route)):
-            self.route_segments.append(Vector(self.route[i-1],self.route[i]))
+        route = [Point(i) for i in environment_details['path']]
+        for i in range(1,len(route)):
+            self.route_segments.append(Vector(route[i-1],route[i]))
+        self.border_segments = []
         points = environment_details['points'][:]
         points.append(points[0])
         for i in range(1,len(points)):
             self.border_segments.append(Vector(Point(points[i-1]),Point(points[i])))
+        self.polygon_segments = []
+        points_L = [Point(i) for i in environment_details['points_L']]
+        points_R = [Point(i) for i in environment_details['points_R']]
+        for i in range(1,len(points_R)):
+            pts = [points_R[i-1],points_R[i],points_L[i],points_L[i-1],points_R[i-1]]
+            self.polygon_segments.append([Vector(pts[j-1],pts[j]) for j in range(1,len(pts))])
+        self.destination_distance = sum([seg.length() for seg in self.route_segments])
 
     def rotation_matrix(self,theta):
         ct = math.cos(theta)
@@ -206,6 +213,13 @@ class Environment():
         innerProduct = (point[0] - segment[0][0])*dx + (point[1] - segment[0][1])*dy
         return ((0<=innerProduct) and (innerProduct<=(dx*dx+dy*dy)))
 
+    def check_point_inside_polygon(self,point,polygon):
+        # From http://www.geeksforgeeks.org/how-to-check-if-a-given-point-lies-inside-a-polygon/
+        pos_segment = Vector(point, Point((1000,point.y)))
+        intercepts = [pos_segment.intersection(seg) for seg in polygon]
+        inside = len([i for i in intercepts if i is None])%2 != 0
+        return inside
+
     def compute_interaction(self,agents):
         for agent in agents:
             x,y,theta = agent.get_state()
@@ -215,13 +229,18 @@ class Environment():
             for s in agent.detail['sensors']:
                 sensor_values.append(self.find_range(car_pos,theta+s['angle'],s['range']))
             agent.set_sensor_reading(sensor_values)
+            # Calculate distance travelled along route
+            d = 0
+            idx = np.where(np.array([self.check_point_inside_polygon(car_pos,polygon) for polygon in self.polygon_segments]) == True)[0]
+            if len(idx)==1:
+                idx = idx[0]
+                d += self.route_segments[idx].perpendicular_base_length(car_pos)
+                for i in range(0,idx):
+                    d += self.route_segments[i].length()
+                agent.prev_score = agent.score
+                agent.score = d
             # Collision update
-            # From http://www.geeksforgeeks.org/how-to-check-if-a-given-point-lies-inside-a-polygon/
-            car_pos_segment = Vector(car_pos, Point((1000,y)))
-            intercepts = []
-            for seg in self.border_segments:
-                intercepts.append(car_pos_segment.intersection(seg))
-            inside = len([i for i in intercepts if i is None])%2 != 0
+            inside = self.check_point_inside_polygon(car_pos,self.border_segments)
             if not inside:
                 agent.state = 'collided'
             # Timing
@@ -229,20 +248,10 @@ class Environment():
                 agent.steps = 0
                 agent.state = 'timeup'
             # Check destination reached
-            elif car_pos.distance(self.route[-1]) < 2.0:
+            elif agent.score > (self.destination_distance-1):
                 agent.state = 'destination'
             if agent.state=='running':
                 agent.steps += 1
-            # Calculate distance travelled along route
-            d = 0
-            dist = sorted([(idx,car_pos.distance(pt)) for idx,pt in enumerate(self.route)], key=lambda x: x[1])
-            idx = min(dist[0][0],dist[1][0])
-            __d = self.route_segments[idx].perpendicular_base_length(car_pos)
-            d += __d
-            for i in range(0,idx):
-                d += self.route_segments[i].length()
-            agent.prev_score = agent.score
-            agent.score = d
 
     def set_max_steps(self,value):
         self.max_steps = value
@@ -273,3 +282,5 @@ def track_generator(track_dict,track_select):
         side_R.append((pr.x,pr.y))
     track_dict['points'] = side_R + side_L[::-1]
     track_dict['start_angle'] = start_angle
+    track_dict['points_L'] = side_L
+    track_dict['points_R'] = side_R
