@@ -165,9 +165,9 @@ class Environment():
         self.track_width = environment_details['track_width']
         self.start_angle = environment_details['start_angle']
         self.route_segments = []
-        route = [Point(i) for i in environment_details['path']]
-        for i in range(1,len(route)):
-            self.route_segments.append(Vector(route[i-1],route[i]))
+        self.route = [Point(i) for i in environment_details['path']]
+        for i in range(1,len(self.route)):
+            self.route_segments.append(Vector(self.route[i-1],self.route[i]))
         self.border_segments = []
         points = environment_details['points'][:]
         points.append(points[0])
