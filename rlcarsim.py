@@ -15,36 +15,31 @@ cars = [
     { 'id':6, 'state':[1,0.5,0.7], 'L':0.3, 'W':0.1, 'v_limit':2 , 'gamma_limit':0.61, 'sensors':[{'range':2.0,'angle':0.53},{'range':2.0,'angle':0},{'range':2.0,'angle':-0.53}] },
 ]
 
-# Different track definitions.
-# Make sure that the paths dont overlap.
-# Name is irrelevent and can be selected as an argument while running the program.
-track = {
-    'track_width':0.8,
-    'L':[(0,0),(5,0),(7,2),(7,6)],
-    'ME':[(0,0),(5,0),(7,2),(7,6),(5,8),(2,8),(0,6),(2,4),(4,4)], # Mirror 'e'
-    'S':[(0,0),(5,0),(7,2),(5,4),(2,4),(0,6),(2,8),(7,8)], # 's'
-    'SE':[(0,0),(5,0),(7,2),(5,4),(2,4),(0,6),(2,8),(9,8),(9,0)], # 's' extended
-    'SS':[(0,0.5),(5,0),(7,2),(5,4),(2,4),(0,6),(2,8),(12,8),(14,6),(12,4),(10,4),(9,2),(10,0),(12,0)], # 's'->mirror 's'
+env_definition = {
+    'BIGBOX':[(0,0),(40,0),(40,40),(0,40)],
+    'BOX':[(0,0),(10,0),(10,10),(0,10)],
+    'dest':[5,5],
+    'dest_radius':0.5
 }
 
 # Paramerters used by the reinforcement learning algorithm
 rl_parameters = {
-    'actions':[(0.5,0),(0.5,0.6),(0.5,-0.6),(1.5,0),(1.5,0.1),(1.5,-0.1)], # Possible actions the agent can take: list of (velocity,steering) tuples
+    'actions':[(0.2,0),(0.2,0.6),(0.2,-0.6),(1.5,0),(1.5,0.1),(1.5,-0.1)], # Possible actions the agent can take: list of (velocity,steering) tuples
     'epsilon':0.0,#0.5 # Initial epsilon value to start traingin with
     'max_epsilon':0.9,#0.93 # Maximum epsilon value to be set as the agent learns
-    'epsilon_step':0.0015,#0.0004 # Increment to epsilon after every epoch(termination of a run)
+    'epsilon_step':0.005,#0.0004 # Increment to epsilon after every epoch(termination of a run)
     'gamma':0.99, # Discount factor
     'lr_alpha':0.001, # Learning rate for back proportion update of neural netwrok
     'leak_alpha':0.3, # Used by the LeakyReLU activation function after each layer in the NN
-    'max_steps':1000, # Timout for the cars to comlete the track, to avoid them going round and round in circles
+    'max_steps':1000, # Timout for the cars to reach destination
     'collision_reward':-1, # Reward offered if car collides
     'timeup_reward':-1, # Reward offered if time runs out
-    'destination_reward':1, # Reward offered if car completes the track
+    'destination_reward':1, # Reward offered if car reaches destination
     'buffer_length':300000, # Size of replay memory to train the NN
-    'replay_start_at':30000, # When to start using replay to learn
+    'replay_start_at':10000, # When to start using replay to learn
     'batchsize':256, # Size of batch to process weight update, varied based on CPU/GPU resources available
     'minibatchsize':256, # Size of batch to update weight at each step. Large values learn more but are slower to process
-    'state_dimension':3, #len(cars[0]['sensors']) -> Number of sensors on the 1st car
+    'state_dimension':4,
     'random_car_position':False
 }
 
@@ -53,10 +48,10 @@ dt = 0.1
 
 # Fixed set of velocity and steering set at regular interval.
 # Change the GOALS to desired update of velocity and steering
-def static_control(track_select='SS'):
-    Environment.track_generator(track,track_select=track_select)
-    env = Environment.Environment(track,10000)
-    gui = GUI.GUI(track,cars,trace=True)
+def static_control(env_select):
+    Environment.env_generator(env_definition,env_select=env_select)
+    env = Environment.Environment(env_definition,10000)
+    gui = GUI.GUI(env_definition,cars,trace=True)
     car_objects = [Environment.Car(c) for c in cars]
     env.compute_interaction(car_objects)
     GOALS = ((0.33,0),(0.14,0.6),(0.4,0),(0.148,-0.6))
@@ -81,18 +76,17 @@ def static_control(track_select='SS'):
 
 # User controls the movement of all cars simultaneously, using 'w','a','s','d' for forward, left, reverse and right.
 # Can be used to sense how the system works(sensor readings, collisions and car score)
-def user_control(track_select='SS'):
-    Environment.track_generator(track,track_select=track_select)
-    env = Environment.Environment(track,10000)
-    gui = GUI.GUI(track,cars,trace=True)
+def user_control(env_select):
+    Environment.env_generator(env_definition,env_select=env_select)
+    env = Environment.Environment(env_definition,10000)
+    gui = GUI.GUI(env_definition,cars,trace=True)
     car_objects = [Environment.Car(c) for c in cars]
     env.compute_interaction(car_objects)
+    d = {'w':[0.5,0.0],'s':[-0.5,0.0],'a':[0.5,0.6],'d':[0.5,-0.6],'i':[1.5,0.0],'k':[-1.5,0.0],'j':[1.5,0.1],'l':[1.5,-0.1]}
     while(True):
-        d = {'w':[0.5,0.0],'s':[-0.3,0.0],'a':[0.1,0.6],'d':[0.1,-0.6]}
-        try:
-            [v,s] = d[raw_input()]
-        except:
-            [v,s] = [0,0]
+        user_ip = raw_input()
+        if user_ip == 'q': break
+        [v,s] = d[user_ip] if (user_ip in d) else [0,0]
         for agent in car_objects:
             agent.set_velocity(v)
             agent.set_steering(s)
@@ -102,23 +96,27 @@ def user_control(track_select='SS'):
                 if car_objects[i].state == 'collided':
                     debug_data += 'Car '+str(i)+'\nCollided!\n\n'
                     continue
+                elif car_objects[i].state == 'destination':
+                    debug_data += 'Car '+str(i)+'\nDestination!\n\n'
+                    continue
                 car_objects[i].update(dt)
                 s_r = car_objects[i].get_sensor_reading()
                 gui.update(i,car_objects[i].get_state())
-                debug_data += 'Car '+str(i)+'\nSensor readings:'+', '.join(['{:.2f}'.format(x) for x in s_r])+'\nCar score='+'{:.2f}'.format(car_objects[i].score)+'\n'
+                #debug_data += 'Car '+str(i)+'\nSensor readings:'+', '.join(['{:.2f}'.format(x) for x in s_r])+'\nCar score='+'{:.2f}'.format(car_objects[i].score)+'\n'
+                debug_data += 'Car '+str(i)+'\nSensor readings:'+', '.join(['{:.2f}'.format(x) for x in s_r])+'\nCar score='+', '.join(['{:.2f}'.format(y) for y in car_objects[i].get_state()])+'\n'
             env.compute_interaction(car_objects)
             gui.update_debug_info(debug_data)
             gui.refresh()
 
-def reinfrocement_neural_network_control(load_weights=None,run_only=False,track_select='SS',random_seed=None,rl_prams=None):
+def reinfrocement_neural_network_control(env_select,load_weights=None,run_only=False,random_seed=None,rl_prams=None):
     run=run_only
     weights_save_dir="./weights/"
     if not os.path.exists(weights_save_dir): os.makedirs(weights_save_dir)
-    Environment.track_generator(track,track_select=track_select)
-    env = Environment.Environment(track,rl_parameters['max_steps'])
-    gui = GUI.GUI(track,cars,trace=True)
+    Environment.env_generator(env_definition,env_select=env_select)
+    env = Environment.Environment(env_definition,rl_parameters['max_steps'])
+    gui = GUI.GUI(env_definition,cars,trace=True)
     car_objects = [Environment.Car(c) for c in cars]
-    rl = RL.QLearning_NN(rl_prams,weights_save_dir=weights_save_dir)
+    rl = RL.QLearning_NN(rl_prams,weights_save_dir=weights_save_dir, run_only=run)
     rl.generate_nn()
     if load_weights is not None:
         if load_weights=='all':
@@ -157,10 +155,18 @@ def reinfrocement_neural_network_control(load_weights=None,run_only=False,track_
             return True
         return None
 
+    def change_destination():
+        if gui.mouse_click_loaction[0] is None:
+            return
+        env.destination.x,env.destination.y = float(gui.mouse_click_loaction[0]),float(gui.mouse_click_loaction[1])
+        gui.init_destination(gui.mouse_click_loaction,gui.env['dest_radius'],reinit=True)
+        gui.mouse_click_loaction = [None,None]
+
     initialize(run_state=run)
     while(1):
         new_run_state = check_run_button(current_state=run)
         if new_run_state is not None: run=new_run_state
+        change_destination()
         if run==True:
             for i,car in enumerate(car_objects):
                 terminal = rl.run_step(car,env,dt)
@@ -213,7 +219,7 @@ def parse_args():
     parser.add_argument("--control", help="static/user/nn",default='static')
     parser.add_argument("--run_only", dest='run_only', action='store_true', help="epsilon=1,no_training")
     parser.add_argument("--load_weights", help="path to load saved weights, or \'all\' to load all available weights in succession")
-    parser.add_argument("--track", help="L/ME/S/SE/SS",default='SS')
+    parser.add_argument("--env", help="BOX/BIGBOX",default='BOX')
     parser.add_argument("--random_seed", help="Run reproducable results", default=None, type=int)
     parser.add_argument("--sensor_length", help="short/long",default=None)
     parser.add_argument("--random_car_position", dest='random_car_position', action='store_true', help="Initialize car position randomly while training")
@@ -224,8 +230,8 @@ if __name__=='__main__':
     args = parse_args()
     make_parameter_changes(args)
     if args.control=='static':
-        static_control(track_select=args.track)
+        static_control(env_select=args.env)
     elif args.control=='user':
-        user_control(track_select=args.track)
+        user_control(env_select=args.env)
     elif args.control=='nn':
-        reinfrocement_neural_network_control(load_weights=args.load_weights,run_only=args.run_only,track_select=args.track,random_seed=args.random_seed,rl_prams=rl_parameters)
+        reinfrocement_neural_network_control(env_select=args.env,load_weights=args.load_weights,run_only=args.run_only,random_seed=args.random_seed,rl_prams=rl_parameters)

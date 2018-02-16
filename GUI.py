@@ -19,6 +19,7 @@ class GUI(object):
         self.init_graph()
         self.approximator = lambda x: str(round(x, -int(math.floor(math.log10(abs(x))))+3)) if x!=0 else '0'
         self.refresh()
+        self.mouse_click_loaction = [None,None]
 
     def construct_window(self):
         # Level 1: Main window and frame
@@ -29,6 +30,7 @@ class GUI(object):
         # Level 2: Segments for display and options
         proportion = 0.7
         self.display = tk.Canvas(self.window_frame, width=int(proportion*self.w), height=self.h)
+        self.display.bind("<Button-1>", self.mouse_click) #Misc
         self.display.pack(side=tk.LEFT)
         self.display.config(background='gray90')
         self.options = tk.Frame(self.window_frame,padx=25,pady=25)
@@ -65,16 +67,33 @@ class GUI(object):
             tr_pts.append(self.display_h-int((pt[1]*self.scale_factor)+self.center_offset[1]))
         return tr_pts
 
+    def inverse_scale_and_offset_center(self,list_of_points):
+        tr_pts = []
+        for pt in list_of_points:
+            tr_pts.append( [ round((float(pt[0])-self.center_offset[0])/self.scale_factor,2) , round((self.display_h-float(pt[1])-self.center_offset[1])/self.scale_factor,2)] )
+        return tr_pts
+
     def rotation_matrix(self,theta):
         ct = math.cos(theta)
         st = math.sin(theta)
         R = np.array([[ct,-st],[st,ct]])
         return R
 
+    def init_destination(self,center,radius,reinit=False):
+        if reinit==True:
+            self.display.delete(self.destination_id)
+        dest_pts = [(center[0]-radius,center[1]-radius),(center[0]+radius,center[1]+radius)]
+        dest_pts = self.scale_and_offset_center(dest_pts)
+        self.destination_id = self.display.create_oval(dest_pts)
+
     def init_env(self):
         self.set_display_range(min([a for (a,b) in self.env['points']]), max([a for (a,b) in self.env['points']]), min([b for (a,b) in self.env['points']]), max([b for (a,b) in self.env['points']]))
         track_coords = self.scale_and_offset_center(self.env['points'])
         self.track_id = self.display.create_polygon(track_coords,fill='white',outline='black')
+        self.init_destination(self.env['dest'],self.env['dest_radius'])
+        #dest_pts = [(self.env['dest'][0]-self.env['dest_radius'],self.env['dest'][1]-self.env['dest_radius']),(self.env['dest'][0]+self.env['dest_radius'],self.env['dest'][1]+self.env['dest_radius'])]
+        #dest_pts = self.scale_and_offset_center(dest_pts)
+        #self.destination_id = self.display.create_oval(dest_pts)
 
     def init_car(self):
         for i in range(len(self.cars)):
@@ -191,3 +210,6 @@ class GUI(object):
             car['trace_history_buffer'] = []
             for idx in range(len(car['trace_history'])):
                 self.display.delete(car['trace_history'][idx])
+
+    def mouse_click(self,event):
+        self.mouse_click_loaction = self.inverse_scale_and_offset_center([[event.x,event.y]])[0]

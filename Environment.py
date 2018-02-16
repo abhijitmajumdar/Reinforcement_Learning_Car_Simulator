@@ -1,5 +1,6 @@
 import numpy as np
 import math
+import random
 
 class Point():
     def __init__(self,pt):
@@ -33,7 +34,7 @@ class Vector():
     def angle(self):
         if self.vector.x==0:
             return 0.0
-        return math.atan(self.vector.y/self.vector.x)
+        return math.atan2(self.vector.y,self.vector.x)
 
     def __add__(self,vec):
         return Vector(self.point,self.vector+vec.vector)
@@ -115,14 +116,22 @@ class Car():
         # Scoring
         self.score = 0
         self.prev_score = 0
+        self.delta_state = np.array([0,0,0])
 
     def constrain(self,quantity,c_min,c_max):
         return min(max(quantity,c_min),c_max)
+
+    def wrap_angle(self,val):
+        return( ( val + np.pi) % (2 * np.pi ) - np.pi )
+
+    def encode_angle(self,val):
+        return [math.sin(val),math.cos(val)]
 
     def update(self,dt):
         self.x += dt*self.v*math.cos(self.theta)
         self.y += dt*self.v*math.sin(self.theta)
         self.theta += (dt*self.v/self.detail['L'])*math.tan(self.gamma)
+        self.theta = self.wrap_angle(self.theta)
 
     def set_steering(self,angle):
         self.gamma = self.constrain(angle,-self.detail['gamma_limit'],self.detail['gamma_limit'])
@@ -148,6 +157,12 @@ class Car():
     def get_sensor_reading(self):
         return self.sensor_reading
 
+    def get_delta_state(self):
+        return self.delta_state
+
+    def random_state(self,mean,variance,angle_variance):
+        self.set_state([mean[0]+random.uniform(-variance,variance), mean[1]+random.uniform(-variance,variance), mean[2]+random.uniform(-angle_variance,angle_variance)])
+
     def reset(self):
         self.gamma = 0 # Steering angle
         self.v = 0 # Heading velocity
@@ -158,28 +173,19 @@ class Car():
         self.steps = 0
         self.score = 0
         self.prev_score = 0
+        self.delta_state = np.array([0,0,0])
 
 class Environment():
     def __init__(self,environment_details,max_steps):
         self.max_steps = max_steps
-        self.track_width = environment_details['track_width']
         self.start_angle = environment_details['start_angle']
-        self.route_segments = []
-        self.route = [Point(i) for i in environment_details['path']]
-        for i in range(1,len(self.route)):
-            self.route_segments.append(Vector(self.route[i-1],self.route[i]))
         self.border_segments = []
         points = environment_details['points'][:]
         points.append(points[0])
         for i in range(1,len(points)):
             self.border_segments.append(Vector(Point(points[i-1]),Point(points[i])))
-        self.polygon_segments = []
-        points_L = [Point(i) for i in environment_details['points_L']]
-        points_R = [Point(i) for i in environment_details['points_R']]
-        for i in range(1,len(points_R)):
-            pts = [points_R[i-1],points_R[i],points_L[i],points_L[i-1],points_R[i-1]]
-            self.polygon_segments.append([Vector(pts[j-1],pts[j]) for j in range(1,len(pts))])
-        self.destination_distance = sum([seg.length() for seg in self.route_segments])
+        self.destination = Point(environment_details['dest'])
+        self.destination_radius = environment_details['dest_radius']
 
     def rotation_matrix(self,theta):
         ct = math.cos(theta)
@@ -229,26 +235,22 @@ class Environment():
             for s in agent.detail['sensors']:
                 sensor_values.append(self.find_range(car_pos,theta+s['angle'],s['range']))
             agent.set_sensor_reading(sensor_values)
-            # Calculate distance travelled along route
-            d = 0
-            idx = np.where(np.array([self.check_point_inside_polygon(car_pos,polygon) for polygon in self.polygon_segments]) == True)[0]
-            if len(idx)==1:
-                idx = idx[0]
-                d += self.route_segments[idx].perpendicular_base_length(car_pos)
-                for i in range(0,idx):
-                    d += self.route_segments[i].length()
-                agent.prev_score = agent.score
-                agent.score = d
+            # Calculate euclidian distance from destination
+            agent.prev_score = agent.score
+            agent.score = car_pos.distance(self.destination)
             # Collision update
             inside = self.check_point_inside_polygon(car_pos,self.border_segments)
+            # Delta state
+            delta = Vector(car_pos,self.destination)
+            agent.delta_state = np.array([delta.vector.x,delta.vector.y,delta.angle()-theta])
+            # Update agent condition
             if not inside:
                 agent.state = 'collided'
             # Timing
             elif agent.steps > self.max_steps:
-                agent.steps = 0
                 agent.state = 'timeup'
             # Check destination reached
-            elif agent.score > (self.destination_distance-1):
+            elif agent.score<self.destination_radius:
                 agent.state = 'destination'
             if agent.state=='running':
                 agent.steps += 1
@@ -256,31 +258,7 @@ class Environment():
     def set_max_steps(self,value):
         self.max_steps = value
 
-def track_generator(track_dict,track_select):
-    track_dict['path'] = track_dict[track_select][:]
-    path = track_dict['path']
-    d = track_dict['track_width']
-    start_angle = 0.0
-    side_L,side_R = [],[]
-    for i in range(len(path)):
-        p1,p2,p3 = None,Point(path[i]),None
-        if i==0:
-            p3 = Point(path[i+1])
-            u = Vector(p3,p2).unit_vector()
-            p1 = u.vector*d + p2
-            start_angle = Vector(p2,p3).angle()
-        elif i==(len(path)-1):
-            p1 = Point(path[i-1])
-            u = Vector(p1,p2).unit_vector()
-            p3 = u.vector*d + p2
-        else:
-            p1 = Point(path[i-1])
-            p3 = Point(path[i+1])
-        perp_unit_vec = Vector(p1,p3).perpendicular().unit_vector()
-        pl,pr = p2+perp_unit_vec.vector*d, p2-perp_unit_vec.vector*d
-        side_L.append((pl.x,pl.y))
-        side_R.append((pr.x,pr.y))
-    track_dict['points'] = side_R + side_L[::-1]
-    track_dict['start_angle'] = start_angle
-    track_dict['points_L'] = side_L
-    track_dict['points_R'] = side_R
+def env_generator(env_dict,env_select):
+    env_dict['path'] = env_dict[env_select][:]
+    env_dict['points'] = env_dict[env_select][:]
+    env_dict['start_angle'] = 0.0

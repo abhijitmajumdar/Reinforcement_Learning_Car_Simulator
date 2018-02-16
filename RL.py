@@ -1,14 +1,59 @@
 import numpy as np
 import random
+import tensorflow as tf
 import keras
 
+class ReplayMemory():
+    def __init__(self,length,state_length,defined_terminal_states,minimum_buffer_length=None):
+        # state,action,reward,new_state,agent_state
+        self.idx = 0
+        self.length = length
+        self.buffer_full = False
+        self.old_states = np.empty((length,state_length),dtype=float)
+        self.old_actions = np.empty(length,dtype=int)
+        self.rewards = np.empty(length,dtype=float)
+        self.new_states = np.empty((length,state_length),dtype=float)
+        self.terminal_state = np.empty(length,dtype=bool)
+        self.defined_terminal_states = defined_terminal_states
+        self.minimum_buffer_length = minimum_buffer_length
+
+    def add(self,state,action,reward,new_state,phy_state):
+        self.old_states[self.idx,:] = state
+        self.old_actions[self.idx] = action
+        self.rewards[self.idx] = reward
+        self.new_states[self.idx,:] = new_state
+        self.terminal_state[self.idx] = True if phy_state in self.defined_terminal_states else False
+        self.idx += 1
+        if self.idx>=self.length:
+            self.idx=0
+            self.buffer_full = True
+
+    def sample(self,size):
+        rand_idxs = []
+        if self.buffer_full==False:
+            check_size = size
+            if self.minimum_buffer_length is not None:
+                check_size = self.minimum_buffer_length
+            if self.idx<check_size:
+                return None,None,None,None,None
+            rand_idxs = np.arange(self.idx)
+        else:
+            rand_idxs = np.arange(self.length)
+        rand_idxs = random.sample(rand_idxs,size)
+        return self.old_states[rand_idxs],self.old_actions[rand_idxs],self.rewards[rand_idxs],self.new_states[rand_idxs],self.terminal_state[rand_idxs]
+
+    def minimum_buffer_filled(self):
+        return True if self.buffer_full is True else (True if self.minimum_buffer_length is None else (True if self.idx>self.minimum_buffer_length else False))
+
 class QLearning_NN():
-    def __init__(self,rl_params,weights_save_dir):
+    def __init__(self,rl_params,weights_save_dir,run_only):
+        # Dont use all of my GPU memory
+        keras.backend.tensorflow_backend.set_session(tf.Session(config=tf.ConfigProto(log_device_placement=False, gpu_options=tf.GPUOptions(allow_growth=True))))
         self.parameters = dict(rl_params)
         self.weights_save_dir = weights_save_dir
         self.parameters['output_length'] = len(self.parameters['actions'])
         self.epoch = 0
-        self.replay,self.replay_index = [],0
+        self.replay = ReplayMemory(length=self.parameters['buffer_length'], state_length=self.parameters['state_dimension'], defined_terminal_states=['collided','timeup','destination'], minimum_buffer_length=self.parameters['replay_start_at']) if run_only==False else None
         self.itr,self.avg_loss,self.avg_score = 0,0,0
         self.train_hist = None
         self.log = {'avg_loss':[],'final_score':[],'state':[],'cross_score':[],'epoch':[]}
@@ -20,10 +65,12 @@ class QLearning_NN():
         self.model = keras.models.Sequential()
         weights_init = keras.initializers.Constant(value=0.1) #'lecun_uniform'
         activation = None
-        self.model.add(keras.layers.Dense(20, kernel_initializer=weights_init, input_shape=(self.parameters['state_dimension'],), activation=activation))
-        self.model.add(keras.layers.LeakyReLU(alpha=self.parameters['leak_alpha']))
-        self.model.add(keras.layers.Dense(self.parameters['output_length'], kernel_initializer=weights_init, activation=activation))
-        self.model.add(keras.layers.LeakyReLU(alpha=self.parameters['leak_alpha']))
+        self.model.add(keras.layers.Dense(128, kernel_initializer=weights_init, input_shape=(self.parameters['state_dimension'],), activation=activation))
+        #self.model.add(keras.layers.LeakyReLU(alpha=self.parameters['leak_alpha']))
+        self.model.add(keras.layers.Dense(64, kernel_initializer=weights_init, activation=activation))
+        #self.model.add(keras.layers.LeakyReLU(alpha=self.parameters['leak_alpha']))
+        self.model.add(keras.layers.Dense(self.parameters['output_length'], kernel_initializer=weights_init))
+        #self.model.add(keras.layers.LeakyReLU(alpha=self.parameters['leak_alpha']))
         # I found Adam is more stable(than SGD/RMSprop) in handling new samples of (X,y) and overfitting, it does still oscillate but in a more subtle manner
         optim = keras.optimizers.Adam(lr=self.parameters['lr_alpha'], beta_1=0.9, beta_2=0.999, epsilon=1e-08, decay=0.0) #lr_alpha=0.001
         self.model.compile(optimizer=optim, loss='mse')
@@ -32,8 +79,12 @@ class QLearning_NN():
         self.model.load_weights(weights)
 
     def take_action(self,agent,dt,epsilon_override=None):
-        sensor_readings = np.array(agent.get_sensor_reading())
-        q_vals = self.model.predict(sensor_readings.reshape(1,self.parameters['state_dimension']),batch_size=1,verbose=0)
+        #sensor_readings = np.array(agent.get_sensor_reading())
+        dstate = agent.get_delta_state()
+        encoded_angle = agent.encode_angle(dstate[2])
+        dstate = np.clip(dstate,-4,4)
+        dstate = np.array([dstate[0],dstate[1],encoded_angle[0],encoded_angle[1]])
+        q_vals = self.model.predict(dstate.reshape(1,self.parameters['state_dimension']),batch_size=1,verbose=0)
         if epsilon_override is not None:
             epsilon = epsilon_override
         else:
@@ -46,7 +97,7 @@ class QLearning_NN():
         agent.set_velocity(v)
         agent.set_steering(s)
         agent.update(dt)
-        return sensor_readings,action
+        return dstate,action
 
     def reward_function(self,agent):
         if agent.state == 'timeup':
@@ -56,50 +107,27 @@ class QLearning_NN():
         elif agent.state == 'destination':
             reward = self.parameters['destination_reward']
         else:
-            #reward = 0
+            reward = 0
             #reward = agent.score # Encourages the car to MOVE, not necessarily forward, infact moving in circles is encouraged
             #reward = -30+agent.score # Encourages the car to crash and end its misery
             #reward = -1 # To factor in time but encourages the car to crash and end its misery. Useful if destination reward is high
-            reward = 1 if agent.score-agent.prev_score>0 else -1
+            #reward = 1 if agent.score-agent.prev_score<0.05 else (-1 if agent.score-agent.prev_score>0.05 else 0)
         return reward
 
-    def train_nn(self,sensor_readings,action,reward,new_sensor_readings,agent_state):
-        if (len(self.replay)<self.parameters['buffer_length']):
-            self.replay.append((sensor_readings,action,reward,new_sensor_readings,agent_state))
-        else:
-            self.replay_index += 1
-            if self.replay_index>=self.parameters['buffer_length']: self.replay_index=0
-            self.replay[self.replay_index] = ((sensor_readings,action,reward,new_sensor_readings,agent_state))
-        if (len(self.replay)>self.parameters['replay_start_at']):
-            minibatch = random.sample(self.replay, self.parameters['minibatchsize'])
-            mb_len = len(minibatch)
-            old_states = np.zeros(shape=(mb_len, self.parameters['state_dimension']))
-            old_actions = np.zeros(shape=(mb_len,))
-            rewards = np.zeros(shape=(mb_len,))
-            new_states = np.zeros(shape=(mb_len, self.parameters['state_dimension']))
-            car_state = []
-            for i, m in enumerate(minibatch):
-                old_state_m, action_m, reward_m, new_state_m, car_state_m = m
-                old_states[i, :] = old_state_m[...]
-                old_actions[i] = action_m
-                rewards[i] = reward_m
-                new_states[i, :] = new_state_m[...]
-                car_state.append(car_state_m)
-            car_state = np.array(car_state)
-            old_qvals = self.model.predict(old_states, batch_size=mb_len)
-            new_qvals = self.model.predict(new_states, batch_size=mb_len)
-            maxQs = np.max(new_qvals, axis=1)
-            y = old_qvals
-            non_term_inds = np.where(car_state == 'running')[0]
-            #non_term_inds = np.concatenate((non_term_inds,np.where(car_state == 'destination')[0]))
-            term_inds = np.where(car_state == 'timeup')[0]
-            term_inds = np.concatenate((term_inds,np.where(car_state == 'collided')[0]))
-            term_inds = np.concatenate((term_inds,np.where(car_state == 'destination')[0]))
-            y[non_term_inds, old_actions[non_term_inds].astype(int)] = rewards[non_term_inds] + (self.parameters['gamma'] * maxQs[non_term_inds])
-            y[term_inds, old_actions[term_inds].astype(int)] = rewards[term_inds]
-            X_train = old_states
-            y_train = y
-            self.train_hist = self.model.fit(X_train, y_train, batch_size=self.parameters['batchsize'], epochs=1, verbose=0)
+    def train_nn(self):
+        old_states,old_actions,rewards,new_states,car_state = self.replay.sample(self.parameters['minibatchsize'])
+        if old_states is None:
+            return
+        old_qvals = self.model.predict(old_states, batch_size=self.parameters['minibatchsize'])
+        new_qvals = self.model.predict(new_states, batch_size=self.parameters['minibatchsize'])
+        maxQs = np.max(new_qvals, axis=1)
+        y_train = old_qvals
+        non_terminal_idx = np.where(car_state == False)[0]
+        term_idx = np.where(car_state == True)[0]
+        y_train[non_terminal_idx, old_actions[non_terminal_idx].astype(int)] = rewards[non_terminal_idx] + (self.parameters['gamma'] * maxQs[non_terminal_idx])
+        y_train[term_idx, old_actions[term_idx].astype(int)] = rewards[term_idx]
+        X_train = old_states
+        self.train_hist = self.model.fit(X_train, y_train, batch_size=self.parameters['batchsize'], epochs=1, verbose=0)
 
     def check_terminal_state_and_log(self,agent,env):
         self.itr += 1
@@ -107,7 +135,7 @@ class QLearning_NN():
         terminal_state,debug_data = None,None
         if agent.state=='collided' or agent.state=='destination' or agent.state=='timeup':
             self.epoch += 1
-            if (len(self.replay)>=self.parameters['replay_start_at']) and self.parameters['epsilon']<self.parameters['max_epsilon']:
+            if self.replay.minimum_buffer_filled()==True and self.parameters['epsilon']<self.parameters['max_epsilon']:
                 self.parameters['epsilon'] += self.parameters['epsilon_step']
             self.avg_loss /= self.itr
             self.log['avg_loss'].append(self.avg_loss)
@@ -128,24 +156,32 @@ class QLearning_NN():
             terminal_state = agent.get_state()
             agent.reset()
             if self.parameters['random_car_position']==True:
-                agent.set_state([1+env.route[0].x+(env.track_width*1.2*(random.random()-0.5)),env.route[0].y+(env.track_width*1.2*(random.random()-0.5)),env.start_angle+(random.random()-0.5)])
+                agent.random_state([5,5,0],4,np.pi)
+            env.compute_interaction([agent])
         return terminal_state,debug_data,self.log['epoch'],self.log['avg_loss'],self.log['final_score'],self.log['cross_score']
 
-    def check_terminal_state(self,agent):
+    def check_terminal_state(self,agent,env):
         terminal_state = None
         if agent.state=='collided' or agent.state=='destination' or agent.state=='timeup':
             terminal_state = agent.state
             agent.reset()
+            if self.parameters['random_car_position']==True:
+                agent.random_state([5,5,0],4,np.pi)
+            env.compute_interaction([agent])
         return terminal_state
 
     def learn_step(self,agent,env,dt):
-        sensor_values,action_taken = self.take_action(agent,dt)
+        dstate,action_taken = self.take_action(agent,dt)
         env.compute_interaction([agent])
-        new_sensor_values = np.array(agent.get_sensor_reading())
+        new_dstate = agent.get_delta_state()
+        encoded_angle = agent.encode_angle(new_dstate[2])
+        new_dstate = np.clip(new_dstate,-4,4)
+        new_dstate = np.array([new_dstate[0],new_dstate[1],encoded_angle[0],encoded_angle[1]])
         reward = self.reward_function(agent)
-        self.train_nn(sensor_values,action_taken,reward,new_sensor_values,agent.state)
+        self.replay.add(dstate,action_taken,reward,new_dstate,agent.state)
+        self.train_nn()
         return self.check_terminal_state_and_log(agent,env)
 
     def run_step(self,agent,env,dt):
         self.take_action(agent,dt,epsilon_override=1.0)
-        return self.check_terminal_state(agent)
+        return self.check_terminal_state(agent,env)
