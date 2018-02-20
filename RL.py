@@ -56,7 +56,8 @@ class QLearning_NN():
         self.replay = ReplayMemory(length=self.parameters['buffer_length'], state_length=self.parameters['state_dimension'], defined_terminal_states=['collided','timeup','destination'], minimum_buffer_length=self.parameters['replay_start_at']) if run_only==False else None
         self.itr,self.avg_loss,self.avg_score = 0,0,0
         self.train_hist = None
-        self.log = {'avg_loss':[],'final_score':[],'state':[],'cross_score':[],'epoch':[]}
+        self.total_reward = 0
+        self.log = {'avg_loss':[],'total_reward':[],'state':[],'running_reward':[],'epoch':[]}
 
     def random_seed(self,seed):
         random.seed(seed)
@@ -129,9 +130,10 @@ class QLearning_NN():
         X_train = old_states
         self.train_hist = self.model.fit(X_train, y_train, batch_size=self.parameters['batchsize'], epochs=1, verbose=0)
 
-    def check_terminal_state_and_log(self,agent,env):
+    def check_terminal_state_and_log(self,agent,env,reward):
         self.itr += 1
         self.avg_loss = 0 if self.train_hist is None else (self.avg_loss+self.train_hist.history['loss'][0])
+        self.total_reward += reward
         terminal_state,debug_data = None,None
         if agent.state=='collided' or agent.state=='destination' or agent.state=='timeup':
             self.epoch += 1
@@ -139,26 +141,23 @@ class QLearning_NN():
                 self.parameters['epsilon'] += self.parameters['epsilon_step']
             self.avg_loss /= self.itr
             self.log['avg_loss'].append(self.avg_loss)
-            self.log['final_score'].append(agent.score)
+            self.log['total_reward'].append(self.total_reward)
             self.log['state'].append(agent.state)
-            if self.avg_loss==0:
-                self.log['cross_score'].append(0)
-            else:
-                self.log['cross_score'].append(agent.score*(1/self.avg_loss))
+            self.avg_score = self.total_reward if self.epoch==1 else (0.99*self.avg_score + 0.01*self.total_reward)
+            self.log['running_reward'].append(self.avg_score)
             self.log['epoch'].append(self.epoch)
             if self.epoch%5==0:
-                self.avg_score = sum(self.log['final_score'][self.epoch-5:self.epoch])/5
                 np.save('./log',self.log)
                 self.model.save_weights(self.weights_save_dir+'rlcar_epoch_'+str(self.epoch).zfill(5))
                 print 'Epoch ',self.epoch,'Epsilon=',self.parameters['epsilon'],'Run=',agent.state,'Avg score=',self.avg_score,'Avg loss=',self.avg_loss
                 debug_data = '[Training]\n'+'Epoch '+str(self.epoch)+'\nEpsilon='+str(self.parameters['epsilon'])+'\nRun='+str(agent.state)+'\nAvg score='+'{:.2f}'.format(self.avg_score)+'\nAvg loss='+str(self.avg_loss)
-            self.avg_loss,self.itr = 0,0
+            self.avg_loss,self.itr,self.total_reward = 0,0,0
             terminal_state = agent.get_state()
             agent.reset()
             if self.parameters['random_car_position']==True:
                 agent.random_state([5,5,0],4,np.pi)
             env.compute_interaction([agent])
-        return terminal_state,debug_data,self.log['epoch'],self.log['avg_loss'],self.log['final_score'],self.log['cross_score']
+        return terminal_state,debug_data,self.log
 
     def check_terminal_state(self,agent,env):
         terminal_state = None
@@ -180,7 +179,7 @@ class QLearning_NN():
         reward = self.reward_function(agent)
         self.replay.add(dstate,action_taken,reward,new_dstate,agent.state)
         self.train_nn()
-        return self.check_terminal_state_and_log(agent,env)
+        return self.check_terminal_state_and_log(agent,env,reward)
 
     def run_step(self,agent,env,dt):
         self.take_action(agent,dt,epsilon_override=1.0)

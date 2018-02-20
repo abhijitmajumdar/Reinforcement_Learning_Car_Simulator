@@ -114,7 +114,7 @@ def reinfrocement_neural_network_control(env_select,load_weights=None,run_only=F
     if not os.path.exists(weights_save_dir): os.makedirs(weights_save_dir)
     Environment.env_generator(env_definition,env_select=env_select)
     env = Environment.Environment(env_definition,rl_parameters['max_steps'])
-    gui = GUI.GUI(env_definition,cars,trace=True)
+    gui = GUI.GUI(env_definition,cars,['Average loss','Total reward','Running reward'],trace=True)
     car_objects = [Environment.Car(c) for c in cars]
     rl = RL.QLearning_NN(rl_prams,weights_save_dir=weights_save_dir, run_only=run)
     rl.generate_nn()
@@ -181,13 +181,13 @@ def reinfrocement_neural_network_control(env_select,load_weights=None,run_only=F
             env.compute_interaction(car_objects)
             gui.refresh()
         else:
-            terminal,debug,epoch,avg_loss,final_score,cross_score = rl.learn_step(car_objects[0],env,dt)
+            terminal,debug,log = rl.learn_step(car_objects[0],env,dt)
             if terminal is not None:
                 if debug is not None:
                     gui.update_debug_info(debug)
-                    gui.update_graph(epoch,avg_loss,gui.graphs[0])
-                    gui.update_graph(epoch,final_score,gui.graphs[1])
-                    gui.update_graph(epoch,cross_score,gui.graphs[2])
+                    gui.update_graph(log['epoch'],log['avg_loss'],gui.graphs[0])
+                    gui.update_graph(log['epoch'],log['total_reward'],gui.graphs[1])
+                    gui.update_graph(log['epoch'],log['running_reward'],gui.graphs[2])
                     gui.refresh()
                 gui.update(0,terminal,draw_car=False,force_end_line=True)
                 gui.refresh()

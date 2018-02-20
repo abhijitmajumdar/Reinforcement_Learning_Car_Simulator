@@ -4,9 +4,9 @@ import math
 import time
 
 class GUI(object):
-    def __init__(self,environment_details,car_details,trace=False):
+    def __init__(self,environment_details,car_details,graphs,trace=False):
         self.w,self.h = 1280,720
-        self.graphs = ['Average loss','Final score','Cross score']
+        self.graphs = graphs
         self.runs = ['Learn','Run only']
         self.construct_window()
         self.title_label('Reinforcement Learning Car Simulation')
