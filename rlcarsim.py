@@ -2,6 +2,8 @@ import Environment,GUI,RL
 import argparse
 import glob
 import os
+import numpy as np
+import math
 
 # Define the cars
 # For training only one car is used(First one). For run_only all cars are simulated.
@@ -32,14 +34,13 @@ rl_parameters = {
     'lr_alpha':0.001, # Learning rate for back proportion update of neural netwrok
     'leak_alpha':0.3, # Used by the LeakyReLU activation function after each layer in the NN
     'max_steps':1000, # Timout for the cars to reach destination
-    'collision_reward':-1, # Reward offered if car collides
-    'timeup_reward':-1, # Reward offered if time runs out
+    'collision_reward':-0.1, # Reward offered if car collides
+    'timeup_reward':-0.1, # Reward offered if time runs out
     'destination_reward':1, # Reward offered if car reaches destination
     'buffer_length':300000, # Size of replay memory to train the NN
     'replay_start_at':10000, # When to start using replay to learn
     'batchsize':256, # Size of batch to process weight update, varied based on CPU/GPU resources available
     'minibatchsize':256, # Size of batch to update weight at each step. Large values learn more but are slower to process
-    'state_dimension':4,
     'random_car_position':False
 }
 
@@ -51,7 +52,7 @@ dt = 0.1
 def static_control(env_select):
     Environment.env_generator(env_definition,env_select=env_select)
     env = Environment.Environment(env_definition,10000)
-    gui = GUI.GUI(env_definition,cars,trace=True)
+    gui = GUI.GUI(env_definition,cars,['Average loss','Total reward','Running reward'],trace=True)
     car_objects = [Environment.Car(c) for c in cars]
     env.compute_interaction(car_objects)
     GOALS = ((0.33,0),(0.14,0.6),(0.4,0),(0.148,-0.6))
@@ -79,7 +80,7 @@ def static_control(env_select):
 def user_control(env_select):
     Environment.env_generator(env_definition,env_select=env_select)
     env = Environment.Environment(env_definition,10000)
-    gui = GUI.GUI(env_definition,cars,trace=True)
+    gui = GUI.GUI(env_definition,cars,['Average loss','Total reward','Running reward'],trace=True)
     car_objects = [Environment.Car(c) for c in cars]
     env.compute_interaction(car_objects)
     d = {'w':[0.5,0.0],'s':[-0.5,0.0],'a':[0.5,0.6],'d':[0.5,-0.6],'i':[1.5,0.0],'k':[-1.5,0.0],'j':[1.5,0.1],'l':[1.5,-0.1]}
@@ -102,8 +103,9 @@ def user_control(env_select):
                 car_objects[i].update(dt)
                 s_r = car_objects[i].get_sensor_reading()
                 gui.update(i,car_objects[i].get_state())
+                delta = car_objects[i].get_state_to_train()
                 #debug_data += 'Car '+str(i)+'\nSensor readings:'+', '.join(['{:.2f}'.format(x) for x in s_r])+'\nCar score='+'{:.2f}'.format(car_objects[i].score)+'\n'
-                debug_data += 'Car '+str(i)+'\nSensor readings:'+', '.join(['{:.2f}'.format(x) for x in s_r])+'\nCar score='+', '.join(['{:.2f}'.format(y) for y in car_objects[i].get_state()])+'\n'
+                debug_data += 'Car '+str(i)+'\nSensor readings:'+', '.join(['{:.2f}'.format(x) for x in s_r])+'\nCar score='+', '.join(['{:.2f}'.format(y) for y in delta])+'\n'
             env.compute_interaction(car_objects)
             gui.update_debug_info(debug_data)
             gui.refresh()
@@ -116,7 +118,7 @@ def reinfrocement_neural_network_control(env_select,load_weights=None,run_only=F
     env = Environment.Environment(env_definition,rl_parameters['max_steps'])
     gui = GUI.GUI(env_definition,cars,['Average loss','Total reward','Running reward'],trace=True)
     car_objects = [Environment.Car(c) for c in cars]
-    rl = RL.QLearning_NN(rl_prams,weights_save_dir=weights_save_dir, run_only=run)
+    rl = RL.QLearning_NN(rl_prams,weights_save_dir=weights_save_dir, run_only=run, sample_state=car_objects[0].get_state_to_train())
     rl.generate_nn()
     if load_weights is not None:
         if load_weights=='all':
@@ -156,11 +158,11 @@ def reinfrocement_neural_network_control(env_select,load_weights=None,run_only=F
         return None
 
     def change_destination():
-        if gui.mouse_click_loaction[0] is None:
-            return
-        env.destination.x,env.destination.y = float(gui.mouse_click_loaction[0]),float(gui.mouse_click_loaction[1])
-        gui.init_destination(gui.mouse_click_loaction,gui.env['dest_radius'],reinit=True)
-        gui.mouse_click_loaction = [None,None]
+        if gui.mouse_click_loaction[0] is not None:
+            env.destination.x,env.destination.y = float(gui.mouse_click_loaction[0]),float(gui.mouse_click_loaction[1])
+        if gui.destination[0]!=env.destination.x:
+            gui.init_destination((env.destination.x,env.destination.y),gui.env['dest_radius'],reinit=True)
+            gui.mouse_click_loaction = [None,None]
 
     initialize(run_state=run)
     while(1):

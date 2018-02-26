@@ -163,6 +163,22 @@ class Car():
     def random_state(self,mean,variance,angle_variance):
         self.set_state([mean[0]+random.uniform(-variance,variance), mean[1]+random.uniform(-variance,variance), mean[2]+random.uniform(-angle_variance,angle_variance)])
 
+    def scale(self,val,valmin,valmax,mi,ma):
+        return ((val-valmin) * float(ma-mi)/(valmax-valmin))+mi
+
+    def get_state_to_train(self):
+        #s,c = self.encode_angle(self.delta_state[2])
+        th = self.wrap_angle(self.delta_state[2])
+        s,c = self.encode_angle(th)
+        th = self.scale(th,-np.pi,np.pi,-1,1)
+        x,y,_ = np.clip(self.delta_state,-4,4)
+        dist = math.sqrt(x**2 + y**2)
+        dist = self.scale(dist,0,5.7,0,1)
+        #dist = self.scale(dist,0,5.7,-1,1)
+        dstate = np.array([dist,s,c])
+        #dstate = np.array([dist,th])
+        return dstate
+
     def reset(self):
         self.gamma = 0 # Steering angle
         self.v = 0 # Heading velocity
@@ -186,6 +202,8 @@ class Environment():
             self.border_segments.append(Vector(Point(points[i-1]),Point(points[i])))
         self.destination = Point(environment_details['dest'])
         self.destination_radius = environment_details['dest_radius']
+        points_np = np.array(points)
+        self.limits = (points_np[:,0].min(),points_np[:,0].max(),points_np[:,1].min(),points_np[:,1].max())
 
     def rotation_matrix(self,theta):
         ct = math.cos(theta)
@@ -257,6 +275,9 @@ class Environment():
 
     def set_max_steps(self,value):
         self.max_steps = value
+
+    def randomize(self):
+        self.destination.x,self.destination.y = random.uniform(self.limits[0]+0.5,self.limits[1]-0.5),random.uniform(self.limits[2]+0.5,self.limits[3]-0.5)
 
 def env_generator(env_dict,env_select):
     env_dict['path'] = env_dict[env_select][:]

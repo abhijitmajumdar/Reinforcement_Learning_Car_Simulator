@@ -85,15 +85,13 @@ class GUI(object):
         dest_pts = [(center[0]-radius,center[1]-radius),(center[0]+radius,center[1]+radius)]
         dest_pts = self.scale_and_offset_center(dest_pts)
         self.destination_id = self.display.create_oval(dest_pts)
+        self.destination = center
 
     def init_env(self):
         self.set_display_range(min([a for (a,b) in self.env['points']]), max([a for (a,b) in self.env['points']]), min([b for (a,b) in self.env['points']]), max([b for (a,b) in self.env['points']]))
         track_coords = self.scale_and_offset_center(self.env['points'])
         self.track_id = self.display.create_polygon(track_coords,fill='white',outline='black')
         self.init_destination(self.env['dest'],self.env['dest_radius'])
-        #dest_pts = [(self.env['dest'][0]-self.env['dest_radius'],self.env['dest'][1]-self.env['dest_radius']),(self.env['dest'][0]+self.env['dest_radius'],self.env['dest'][1]+self.env['dest_radius'])]
-        #dest_pts = self.scale_and_offset_center(dest_pts)
-        #self.destination_id = self.display.create_oval(dest_pts)
 
     def init_car(self):
         for i in range(len(self.cars)):

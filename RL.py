@@ -46,12 +46,13 @@ class ReplayMemory():
         return True if self.buffer_full is True else (True if self.minimum_buffer_length is None else (True if self.idx>self.minimum_buffer_length else False))
 
 class QLearning_NN():
-    def __init__(self,rl_params,weights_save_dir,run_only):
+    def __init__(self,rl_params,weights_save_dir,run_only,sample_state):
         # Dont use all of my GPU memory
         keras.backend.tensorflow_backend.set_session(tf.Session(config=tf.ConfigProto(log_device_placement=False, gpu_options=tf.GPUOptions(allow_growth=True))))
         self.parameters = dict(rl_params)
         self.weights_save_dir = weights_save_dir
         self.parameters['output_length'] = len(self.parameters['actions'])
+        self.parameters['state_dimension'] = len(sample_state)
         self.epoch = 0
         self.replay = ReplayMemory(length=self.parameters['buffer_length'], state_length=self.parameters['state_dimension'], defined_terminal_states=['collided','timeup','destination'], minimum_buffer_length=self.parameters['replay_start_at']) if run_only==False else None
         self.itr,self.avg_loss,self.avg_score = 0,0,0
@@ -64,13 +65,13 @@ class QLearning_NN():
 
     def generate_nn(self):
         self.model = keras.models.Sequential()
-        weights_init = keras.initializers.Constant(value=0.1) #'lecun_uniform'
+        weights_init = keras.initializers.Constant(value=0.001) #'lecun_uniform'
         activation = None
-        self.model.add(keras.layers.Dense(128, kernel_initializer=weights_init, input_shape=(self.parameters['state_dimension'],), activation=activation))
+        self.model.add(keras.layers.Dense(20, kernel_initializer=weights_init, input_shape=(self.parameters['state_dimension'],), activation=activation))
         #self.model.add(keras.layers.LeakyReLU(alpha=self.parameters['leak_alpha']))
-        self.model.add(keras.layers.Dense(64, kernel_initializer=weights_init, activation=activation))
+        self.model.add(keras.layers.Dense(12, kernel_initializer=weights_init, activation=activation))
         #self.model.add(keras.layers.LeakyReLU(alpha=self.parameters['leak_alpha']))
-        self.model.add(keras.layers.Dense(self.parameters['output_length'], kernel_initializer=weights_init))
+        self.model.add(keras.layers.Dense(self.parameters['output_length'], kernel_initializer=weights_init, activation='linear'))
         #self.model.add(keras.layers.LeakyReLU(alpha=self.parameters['leak_alpha']))
         # I found Adam is more stable(than SGD/RMSprop) in handling new samples of (X,y) and overfitting, it does still oscillate but in a more subtle manner
         optim = keras.optimizers.Adam(lr=self.parameters['lr_alpha'], beta_1=0.9, beta_2=0.999, epsilon=1e-08, decay=0.0) #lr_alpha=0.001
@@ -80,11 +81,7 @@ class QLearning_NN():
         self.model.load_weights(weights)
 
     def take_action(self,agent,dt,epsilon_override=None):
-        #sensor_readings = np.array(agent.get_sensor_reading())
-        dstate = agent.get_delta_state()
-        encoded_angle = agent.encode_angle(dstate[2])
-        dstate = np.clip(dstate,-4,4)
-        dstate = np.array([dstate[0],dstate[1],encoded_angle[0],encoded_angle[1]])
+        dstate = agent.get_state_to_train()
         q_vals = self.model.predict(dstate.reshape(1,self.parameters['state_dimension']),batch_size=1,verbose=0)
         if epsilon_override is not None:
             epsilon = epsilon_override
@@ -156,6 +153,7 @@ class QLearning_NN():
             agent.reset()
             if self.parameters['random_car_position']==True:
                 agent.random_state([5,5,0],4,np.pi)
+                #env.randomize()
             env.compute_interaction([agent])
         return terminal_state,debug_data,self.log
 
@@ -172,10 +170,7 @@ class QLearning_NN():
     def learn_step(self,agent,env,dt):
         dstate,action_taken = self.take_action(agent,dt)
         env.compute_interaction([agent])
-        new_dstate = agent.get_delta_state()
-        encoded_angle = agent.encode_angle(new_dstate[2])
-        new_dstate = np.clip(new_dstate,-4,4)
-        new_dstate = np.array([new_dstate[0],new_dstate[1],encoded_angle[0],encoded_angle[1]])
+        new_dstate = agent.get_state_to_train()
         reward = self.reward_function(agent)
         self.replay.add(dstate,action_taken,reward,new_dstate,agent.state)
         self.train_nn()
