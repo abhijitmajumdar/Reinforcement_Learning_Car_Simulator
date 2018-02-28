@@ -36,7 +36,7 @@ rl_parameters = {
     'max_steps':1000, # Timout for the cars to reach destination
     'collision_reward':-0.1, # Reward offered if car collides
     'timeup_reward':-0.1, # Reward offered if time runs out
-    'destination_reward':1, # Reward offered if car reaches destination
+    'destination_reward':0.1, # Reward offered if car reaches destination
     'buffer_length':300000, # Size of replay memory to train the NN
     'replay_start_at':10000, # When to start using replay to learn
     'batchsize':256, # Size of batch to process weight update, varied based on CPU/GPU resources available
@@ -118,7 +118,7 @@ def reinfrocement_neural_network_control(env_select,load_weights=None,run_only=F
     env = Environment.Environment(env_definition,rl_parameters['max_steps'])
     gui = GUI.GUI(env_definition,cars,['Average loss','Total reward','Running reward'],trace=True)
     car_objects = [Environment.Car(c) for c in cars]
-    rl = RL.QLearning_NN(rl_prams,weights_save_dir=weights_save_dir, run_only=run, sample_state=car_objects[0].get_state_to_train())
+    rl = RL.QLearning_NN(rl_prams,weights_save_dir=weights_save_dir, run_only=run, sample_state=car_objects[0].get_state_to_train(10))
     rl.generate_nn()
     if load_weights is not None:
         if load_weights=='all':

@@ -80,8 +80,8 @@ class QLearning_NN():
     def load_weights(self,weights):
         self.model.load_weights(weights)
 
-    def take_action(self,agent,dt,epsilon_override=None):
-        dstate = agent.get_state_to_train()
+    def take_action(self,agent,env,dt,epsilon_override=None):
+        dstate = agent.get_state_to_train(env.max_delta)
         q_vals = self.model.predict(dstate.reshape(1,self.parameters['state_dimension']),batch_size=1,verbose=0)
         if epsilon_override is not None:
             epsilon = epsilon_override
@@ -153,7 +153,7 @@ class QLearning_NN():
             agent.reset()
             if self.parameters['random_car_position']==True:
                 agent.random_state([5,5,0],4,np.pi)
-                #env.randomize()
+                env.randomize()
             env.compute_interaction([agent])
         return terminal_state,debug_data,self.log
 
@@ -168,14 +168,14 @@ class QLearning_NN():
         return terminal_state
 
     def learn_step(self,agent,env,dt):
-        dstate,action_taken = self.take_action(agent,dt)
+        dstate,action_taken = self.take_action(agent,env,dt)
         env.compute_interaction([agent])
-        new_dstate = agent.get_state_to_train()
+        new_dstate = agent.get_state_to_train(env.max_delta)
         reward = self.reward_function(agent)
         self.replay.add(dstate,action_taken,reward,new_dstate,agent.state)
         self.train_nn()
         return self.check_terminal_state_and_log(agent,env,reward)
 
     def run_step(self,agent,env,dt):
-        self.take_action(agent,dt,epsilon_override=1.0)
+        self.take_action(agent,env,dt,epsilon_override=1.0)
         return self.check_terminal_state(agent,env)
