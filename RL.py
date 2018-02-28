@@ -151,7 +151,7 @@ class QLearning_NN():
             self.avg_loss,self.itr,self.total_reward = 0,0,0
             terminal_state = agent.get_state()
             agent.reset()
-            if self.parameters['random_car_position']==True:
+            if self.parameters['random_position']==True:
                 agent.random_state([5,5,0],4,np.pi)
                 env.randomize()
             env.compute_interaction([agent])
@@ -162,7 +162,7 @@ class QLearning_NN():
         if agent.state=='collided' or agent.state=='destination' or agent.state=='timeup':
             terminal_state = agent.state
             agent.reset()
-            if self.parameters['random_car_position']==True:
+            if self.parameters['random_position']==True:
                 agent.random_state([5,5,0],4,np.pi)
             env.compute_interaction([agent])
         return terminal_state

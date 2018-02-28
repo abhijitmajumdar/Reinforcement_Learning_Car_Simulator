@@ -41,7 +41,7 @@ rl_parameters = {
     'replay_start_at':10000, # When to start using replay to learn
     'batchsize':256, # Size of batch to process weight update, varied based on CPU/GPU resources available
     'minibatchsize':256, # Size of batch to update weight at each step. Large values learn more but are slower to process
-    'random_car_position':False
+    'random_position':False
 }
 
 # Dynamics and control update rate
@@ -159,7 +159,7 @@ def reinfrocement_neural_network_control(env_select,load_weights=None,run_only=F
 
     def change_destination():
         if gui.mouse_click_loaction[0] is not None:
-            env.destination.x,env.destination.y = float(gui.mouse_click_loaction[0]),float(gui.mouse_click_loaction[1])
+            env.change_destination(float(gui.mouse_click_loaction[0]),float(gui.mouse_click_loaction[1]))
         if gui.destination[0]!=env.destination.x:
             gui.init_destination((env.destination.x,env.destination.y),gui.env['dest_radius'],reinit=True)
             gui.mouse_click_loaction = [None,None]
@@ -213,8 +213,8 @@ def make_parameter_changes(args):
             for i in range(len(cars)):
                 for j in range(len(cars[i]['sensors'])):
                     cars[i]['sensors'][j]['range'] = 1.0
-    if args.random_car_position is True:
-        rl_parameters['random_car_position'] = True
+    if args.random_position is True:
+        rl_parameters['random_position'] = True
 
 def parse_args():
     parser = argparse.ArgumentParser(description="RL-Car Project")
@@ -224,7 +224,7 @@ def parse_args():
     parser.add_argument("--env", help="BOX/BIGBOX",default='BOX')
     parser.add_argument("--random_seed", help="Run reproducable results", default=None, type=int)
     parser.add_argument("--sensor_length", help="short/long",default=None)
-    parser.add_argument("--random_car_position", dest='random_car_position', action='store_true', help="Initialize car position randomly while training")
+    parser.add_argument("--random_position", dest='random_position', action='store_true', help="Initialize car position randomly while training")
     parser.add_argument("--add_more_sensors", dest='add_more_sensors', action='store_true', help="Add 2 more sensors at +-60deg to improve state representation")
     return parser.parse_args()
 

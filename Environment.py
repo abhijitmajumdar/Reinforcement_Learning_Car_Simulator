@@ -199,6 +199,9 @@ class Environment():
         self.limits = (points_np[:,0].min(),points_np[:,0].max(),points_np[:,1].min(),points_np[:,1].max())
         self.max_delta = math.sqrt((self.limits[1]-self.limits[0])**2 + (self.limits[3]-self.limits[2])**2)
 
+    def constrain(self,quantity,c_min,c_max):
+        return min(max(quantity,c_min),c_max)
+
     def rotation_matrix(self,theta):
         ct = math.cos(theta)
         st = math.sin(theta)
@@ -270,8 +273,11 @@ class Environment():
     def set_max_steps(self,value):
         self.max_steps = value
 
+    def change_destination(self,x,y):
+        self.destination.x,self.destination.y = self.constrain(x,self.limits[0],self.limits[1]), self.constrain(y,self.limits[2],self.limits[3])
+
     def randomize(self):
-        self.destination.x,self.destination.y = random.uniform(self.limits[0],self.limits[1]),random.uniform(self.limits[2],self.limits[3])
+        self.change_destination(random.uniform(self.limits[0],self.limits[1]),random.uniform(self.limits[2],self.limits[3]))
 
 def env_generator(env_dict,env_select):
     env_dict['path'] = env_dict[env_select][:]
