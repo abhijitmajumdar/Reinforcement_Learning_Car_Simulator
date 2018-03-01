@@ -41,6 +41,21 @@ class ReplayMemory():
             rand_idxs = np.arange(self.length)
         rand_idxs = random.sample(rand_idxs,size)
         return self.old_states[rand_idxs],self.old_actions[rand_idxs],self.rewards[rand_idxs],self.new_states[rand_idxs],self.terminal_state[rand_idxs]
+        '''
+    def sample(self,size):
+        rand_idx = None
+        if self.buffer_full==False:
+            check_size = size
+            if self.minimum_buffer_length is not None:
+                check_size = self.minimum_buffer_length
+            if self.idx<check_size:
+                return None,None,None,None,None
+            rand_idx = random.randint(0,self.idx-size)
+        else:
+            rand_idx = random.randint(0,self.length-size)
+        rand_idxs = range(rand_idx,size+rand_idx)
+        return self.old_states[rand_idxs],self.old_actions[rand_idxs],self.rewards[rand_idxs],self.new_states[rand_idxs],self.terminal_state[rand_idxs]
+        '''
 
     def minimum_buffer_filled(self):
         return True if self.buffer_full is True else (True if self.minimum_buffer_length is None else (True if self.idx>self.minimum_buffer_length else False))
@@ -80,21 +95,23 @@ class QLearning_NN():
     def load_weights(self,weights):
         self.model.load_weights(weights)
 
-    def take_action(self,agent,env,dt,epsilon_override=None):
-        dstate = agent.get_state_to_train(env.max_delta)
-        q_vals = self.model.predict(dstate.reshape(1,self.parameters['state_dimension']),batch_size=1,verbose=0)
+    def take_action(self,agents,env,dt,epsilon_override=None):
+        dstate = np.array([agent.get_state_to_train(env.max_delta) for agent in agents])
+        q_vals = self.model.predict(dstate,batch_size=len(agents),verbose=0)
         if epsilon_override is not None:
             epsilon = epsilon_override
         else:
             epsilon = self.parameters['epsilon']
         if (random.random() > epsilon):
-            action = random.randint(0,self.parameters['output_length']-1)
+            #action = [random.randint(0,self.parameters['output_length']-1)]
+            action = np.random.random_integers(0,self.parameters['output_length']-1,len(agents))
         else:
-            action = (np.argmax(q_vals))
-        v,s = self.parameters['actions'][action]
-        agent.set_velocity(v)
-        agent.set_steering(s)
-        agent.update(dt)
+            action = np.argmax(q_vals,axis=1)
+        for i in range(len(agents)):
+            v,s = self.parameters['actions'][action[i]]
+            agents[i].set_velocity(v)
+            agents[i].set_steering(s)
+            agents[i].update(dt)
         return dstate,action
 
     def reward_function(self,agent):
@@ -127,55 +144,63 @@ class QLearning_NN():
         X_train = old_states
         self.train_hist = self.model.fit(X_train, y_train, batch_size=self.parameters['batchsize'], epochs=1, verbose=0)
 
-    def check_terminal_state_and_log(self,agent,env,reward):
+    def check_terminal_state_and_log(self,agents,env,reward):
         self.itr += 1
         self.avg_loss = 0 if self.train_hist is None else (self.avg_loss+self.train_hist.history['loss'][0])
-        self.total_reward += reward
-        terminal_state,debug_data = None,None
-        if agent.state=='collided' or agent.state=='destination' or agent.state=='timeup':
-            self.epoch += 1
-            if self.replay.minimum_buffer_filled()==True and self.parameters['epsilon']<self.parameters['max_epsilon']:
-                self.parameters['epsilon'] += self.parameters['epsilon_step']
-            self.avg_loss /= self.itr
-            self.log['avg_loss'].append(self.avg_loss)
-            self.log['total_reward'].append(self.total_reward)
-            self.log['state'].append(agent.state)
-            self.avg_score = self.total_reward if self.epoch==1 else (0.99*self.avg_score + 0.01*self.total_reward)
-            self.log['running_reward'].append(self.avg_score)
-            self.log['epoch'].append(self.epoch)
-            if self.epoch%5==0:
-                np.save('./log',self.log)
-                self.model.save_weights(self.weights_save_dir+'rlcar_epoch_'+str(self.epoch).zfill(5))
-                print 'Epoch ',self.epoch,'Epsilon=',self.parameters['epsilon'],'Run=',agent.state,'Avg score=',self.avg_score,'Avg loss=',self.avg_loss
-                debug_data = '[Training]\n'+'Epoch '+str(self.epoch)+'\nEpsilon='+str(self.parameters['epsilon'])+'\nRun='+str(agent.state)+'\nAvg score='+'{:.2f}'.format(self.avg_score)+'\nAvg loss='+str(self.avg_loss)
-            self.avg_loss,self.itr,self.total_reward = 0,0,0
-            terminal_state = agent.get_state()
-            agent.reset()
-            if self.parameters['random_position']==True:
-                agent.random_state([5,5,0],4,np.pi)
-                env.randomize()
-            env.compute_interaction([agent])
-        return terminal_state,debug_data,self.log
+        self.total_reward += reward[0]
+        terminals,terminal_states,debug_data = [],[],None
+        for i,agent in enumerate(agents):
+            if agent.state=='collided' or agent.state=='destination' or agent.state=='timeup':
+                if i==0:
+                    self.epoch += 1
+                    if self.replay.minimum_buffer_filled()==True and self.parameters['epsilon']<self.parameters['max_epsilon']:
+                        self.parameters['epsilon'] += self.parameters['epsilon_step']
+                    self.avg_loss /= self.itr
+                    self.log['avg_loss'].append(self.avg_loss)
+                    self.log['total_reward'].append(self.total_reward)
+                    self.log['state'].append(agent.state)
+                    self.avg_score = self.total_reward if self.epoch==1 else (0.99*self.avg_score + 0.01*self.total_reward)
+                    self.log['running_reward'].append(self.avg_score)
+                    self.log['epoch'].append(self.epoch)
+                    if self.epoch%5==0:
+                        np.save('./log',self.log)
+                        self.model.save_weights(self.weights_save_dir+'rlcar_epoch_'+str(self.epoch).zfill(5))
+                        print 'Epoch ',self.epoch,'Epsilon=',self.parameters['epsilon'],'Run=',agent.state,'Avg score=',self.avg_score,'Avg loss=',self.avg_loss
+                        debug_data = '[Training]\n'+'Epoch '+str(self.epoch)+'\nEpsilon='+str(self.parameters['epsilon'])+'\nRun='+str(agent.state)+'\nAvg score='+'{:.2f}'.format(self.avg_score)+'\nAvg loss='+str(self.avg_loss)
+                    self.avg_loss,self.itr,self.total_reward = 0,0,0
+                    env.randomize()
+                terminal_states.append(agent.get_state())
+                terminals.append(i)
+                agent.reset()
+                if self.parameters['random_position']==True:
+                    agent.random_state([5,5,0],4,np.pi)
+                    #env.randomize()
+                env.compute_interaction([agent])
+        return terminals,terminal_states,debug_data,self.log
 
-    def check_terminal_state(self,agent,env):
-        terminal_state = None
-        if agent.state=='collided' or agent.state=='destination' or agent.state=='timeup':
-            terminal_state = agent.state
-            agent.reset()
-            if self.parameters['random_position']==True:
-                agent.random_state([5,5,0],4,np.pi)
-            env.compute_interaction([agent])
-        return terminal_state
+    def check_terminal_state(self,agents,env):
+        terminals,terminal_states = [],[]
+        for i,agent in enumerate(agents):
+            if agent.state=='collided' or agent.state=='destination' or agent.state=='timeup':
+                terminal_states.append(agent.state)
+                terminals.append(i)
+                agent.reset()
+                if self.parameters['random_position']==True:
+                    agent.random_state([5,5,0],4,np.pi)
+                env.compute_interaction([agent])
+        return terminals,terminal_states
 
-    def learn_step(self,agent,env,dt):
-        dstate,action_taken = self.take_action(agent,env,dt)
-        env.compute_interaction([agent])
-        new_dstate = agent.get_state_to_train(env.max_delta)
-        reward = self.reward_function(agent)
-        self.replay.add(dstate,action_taken,reward,new_dstate,agent.state)
+    def learn_step(self,agents,env,dt):
+        dstate,action_taken = self.take_action(agents,env,dt)
+        env.compute_interaction(agents)
+        new_dstate = [agent.get_state_to_train(env.max_delta) for agent in agents]
+        reward = [self.reward_function(agent) for agent in agents]
+        agent_state = [agent.state for agent in agents]
+        for i in range(len(agents)):
+            self.replay.add(dstate[i],action_taken[i],reward[i],new_dstate[i],agent_state[i])
         self.train_nn()
-        return self.check_terminal_state_and_log(agent,env,reward)
+        return self.check_terminal_state_and_log(agents,env,reward)
 
-    def run_step(self,agent,env,dt):
-        self.take_action(agent,env,dt,epsilon_override=1.0)
-        return self.check_terminal_state(agent,env)
+    def run_step(self,agents,env,dt):
+        self.take_action(agents,env,dt,epsilon_override=1.0)
+        return self.check_terminal_state(agents,env)

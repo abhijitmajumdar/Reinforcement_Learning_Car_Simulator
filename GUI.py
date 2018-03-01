@@ -13,7 +13,7 @@ class GUI(object):
         self.env = environment_details
         self.cars = [dict(car) for car in car_details]
         self.trace = trace
-        self.trace_history_limit = 400
+        self.trace_history_limit = 50
         self.init_env()
         self.init_car()
         self.init_graph()

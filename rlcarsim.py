@@ -111,6 +111,7 @@ def user_control(env_select):
             gui.refresh()
 
 def reinfrocement_neural_network_control(env_select,load_weights=None,run_only=False,random_seed=None,rl_prams=None):
+    import time
     run=run_only
     weights_save_dir="./weights/"
     if not os.path.exists(weights_save_dir): os.makedirs(weights_save_dir)
@@ -170,34 +171,33 @@ def reinfrocement_neural_network_control(env_select,load_weights=None,run_only=F
         if new_run_state is not None: run=new_run_state
         change_destination()
         if run==True:
-            for i,car in enumerate(car_objects):
-                terminal = rl.run_step(car,env,dt)
-                if terminal is not None:
-                    print 'Car',i,':',terminal
-                    if i==0:
-                        if load_weights=='all' and weight_names_index<len(weight_names):
-                            rl.load_weights(weight_names[weight_names_index])
-                            gui.update_debug_info('[Testing]\n'+'Weights loaded:\n'+weight_names[weight_names_index])
-                            weight_names_index += 1
-                gui.update(i,car.get_state())
+            terminals,terminal_states = rl.run_step(car_objects,env,dt)
+            for t,ts in zip(terminals,terminal_states):
+                print 'Car',t,':',ts
+                if t==0:
+                    if load_weights=='all' and weight_names_index<len(weight_names):
+                        rl.load_weights(weight_names[weight_names_index])
+                        gui.update_debug_info('[Testing]\n'+'Weights loaded:\n'+weight_names[weight_names_index])
+                        weight_names_index += 1
+            for i in range(len(car_objects)): gui.update(i,car_objects[i].get_state())
             env.compute_interaction(car_objects)
             gui.refresh()
         else:
-            terminal,debug,log = rl.learn_step(car_objects[0],env,dt)
-            if terminal is not None:
+            terminals,terminal_states,debug,log = rl.learn_step(car_objects,env,dt)
+            if len(terminals)>0:
                 if debug is not None:
                     gui.update_debug_info(debug)
                     gui.update_graph(log['epoch'],log['avg_loss'],gui.graphs[0])
                     gui.update_graph(log['epoch'],log['total_reward'],gui.graphs[1])
                     gui.update_graph(log['epoch'],log['running_reward'],gui.graphs[2])
-                    gui.refresh()
-                gui.update(0,terminal,draw_car=False,force_end_line=True)
+                for t,ts in zip(terminals,terminal_states):
+                    gui.update(t,ts,draw_car=False,force_end_line=True)
                 gui.refresh()
-            if rl.epoch%100==0:
-                gui.update(0,car_objects[0].get_state(),draw_car=True)
-                gui.refresh()
-            else:
-                gui.update(0,car_objects[0].get_state(),draw_car=False)
+            show_cars = (rl.epoch%100==0)
+            for i in range(len(car_objects)):
+                gui.update(i,car_objects[i].get_state(),draw_car=show_cars)
+            if show_cars==True: gui.refresh()
+
 
 def make_parameter_changes(args):
     if args.add_more_sensors is True:

@@ -170,7 +170,7 @@ class Car():
         s,c = self.encode_angle(self.delta_state[2])
         dist = self.scale(math.sqrt(self.delta_state[0]**2 + self.delta_state[1]**2),0,delta_limit,0,1)
         dstate = np.array([dist,s,c])
-        return dstate
+        return np.around(dstate,decimals=2)
 
     def reset(self):
         self.gamma = 0 # Steering angle
@@ -273,8 +273,8 @@ class Environment():
     def set_max_steps(self,value):
         self.max_steps = value
 
-    def change_destination(self,x,y):
-        self.destination.x,self.destination.y = self.constrain(x,self.limits[0],self.limits[1]), self.constrain(y,self.limits[2],self.limits[3])
+    def change_destination(self,x,y,buffer_space=0.3):
+        self.destination.x,self.destination.y = self.constrain(x,self.limits[0]+buffer_space,self.limits[1]-buffer_space), self.constrain(y,self.limits[2]+buffer_space,self.limits[3]-buffer_space)
 
     def randomize(self):
         self.change_destination(random.uniform(self.limits[0],self.limits[1]),random.uniform(self.limits[2],self.limits[3]))
