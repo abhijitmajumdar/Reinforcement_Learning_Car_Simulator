@@ -1,7 +1,6 @@
 import Environment,GUI,RL
-import argparse
+import Utils
 import glob
-import os
 import numpy as np
 import math
 
@@ -22,26 +21,6 @@ env_definition = {
     'BOX':[(0,0),(10,0),(10,10),(0,10)],
     'dest':[5,5],
     'dest_radius':0.5
-}
-
-# Paramerters used by the reinforcement learning algorithm
-rl_parameters = {
-    'actions':[(0.2,0),(0.2,0.6),(0.2,-0.6),(1.5,0),(1.5,0.1),(1.5,-0.1)], # Possible actions the agent can take: list of (velocity,steering) tuples
-    'epsilon':0.0,#0.5 # Initial epsilon value to start traingin with
-    'max_epsilon':0.9,#0.93 # Maximum epsilon value to be set as the agent learns
-    'epsilon_step':0.005,#0.0004 # Increment to epsilon after every epoch(termination of a run)
-    'gamma':0.99, # Discount factor
-    'lr_alpha':0.001, # Learning rate for back proportion update of neural netwrok
-    'leak_alpha':0.3, # Used by the LeakyReLU activation function after each layer in the NN
-    'max_steps':1000, # Timout for the cars to reach destination
-    'collision_reward':-0.1, # Reward offered if car collides
-    'timeup_reward':-0.1, # Reward offered if time runs out
-    'destination_reward':0.1, # Reward offered if car reaches destination
-    'buffer_length':300000, # Size of replay memory to train the NN
-    'replay_start_at':10000, # When to start using replay to learn
-    'batchsize':256, # Size of batch to process weight update, varied based on CPU/GPU resources available
-    'minibatchsize':256, # Size of batch to update weight at each step. Large values learn more but are slower to process
-    'random_position':False
 }
 
 # Dynamics and control update rate
@@ -110,25 +89,21 @@ def user_control(env_select):
             gui.update_debug_info(debug_data)
             gui.refresh()
 
-def reinfrocement_neural_network_control(env_select,load_weights=None,run_only=False,random_seed=None,rl_prams=None):
-    import time
+def reinfrocement_neural_network_control(env_select,load_weights=None,run_only=False,random_seed=None,config_file='config.ini'):
     run=run_only
-    weights_save_dir="./weights/"
-    if not os.path.exists(weights_save_dir): os.makedirs(weights_save_dir)
+    rl_prams = Utils.configurator(config_file)
     Environment.env_generator(env_definition,env_select=env_select)
-    env = Environment.Environment(env_definition,rl_parameters['max_steps'])
+    env = Environment.Environment(env_definition,rl_prams['max_steps'])
     gui = GUI.GUI(env_definition,cars,['Average loss','Total reward','Running reward'],trace=True)
     car_objects = [Environment.Car(c) for c in cars]
-    rl = RL.QLearning_NN(rl_prams,weights_save_dir=weights_save_dir, run_only=run, sample_state=car_objects[0].get_state_to_train(10))
-    rl.generate_nn()
+    env.compute_interaction(car_objects)
+    rl = RL.QLearning_NN(rl_prams, run_only=run, sample_state=car_objects[0].get_state_to_train(10), n_agents=len(car_objects))
     if load_weights is not None:
         if load_weights=='all':
             run=True
         else:
             rl.load_weights(load_weights)
     if random_seed is not None: rl.random_seed(random_seed)
-    weight_names = sorted([name for name in glob.glob(weights_save_dir+'*')])
-    weight_names_index = 0
 
     def initialize(run_state):
         env.compute_interaction(car_objects)
@@ -174,11 +149,6 @@ def reinfrocement_neural_network_control(env_select,load_weights=None,run_only=F
             terminals,terminal_states = rl.run_step(car_objects,env,dt)
             for t,ts in zip(terminals,terminal_states):
                 print 'Car',t,':',ts
-                if t==0:
-                    if load_weights=='all' and weight_names_index<len(weight_names):
-                        rl.load_weights(weight_names[weight_names_index])
-                        gui.update_debug_info('[Testing]\n'+'Weights loaded:\n'+weight_names[weight_names_index])
-                        weight_names_index += 1
             for i in range(len(car_objects)): gui.update(i,car_objects[i].get_state())
             env.compute_interaction(car_objects)
             gui.refresh()
@@ -187,53 +157,23 @@ def reinfrocement_neural_network_control(env_select,load_weights=None,run_only=F
             if len(terminals)>0:
                 if debug is not None:
                     gui.update_debug_info(debug)
+                    log = log[0]
                     gui.update_graph(log['epoch'],log['avg_loss'],gui.graphs[0])
                     gui.update_graph(log['epoch'],log['total_reward'],gui.graphs[1])
                     gui.update_graph(log['epoch'],log['running_reward'],gui.graphs[2])
                 for t,ts in zip(terminals,terminal_states):
                     gui.update(t,ts,draw_car=False,force_end_line=True)
                 gui.refresh()
-            show_cars = (rl.epoch%100==0)
+            show_cars = (car_objects[0].epoch%100==0)
             for i in range(len(car_objects)):
                 gui.update(i,car_objects[i].get_state(),draw_car=show_cars)
             if show_cars==True: gui.refresh()
 
-
-def make_parameter_changes(args):
-    if args.add_more_sensors is True:
-        for i in range(len(cars)):
-            cars[i]['sensors'] = [{'range':2.0,'angle':1.0},{'range':2.0,'angle':0.53},{'range':2.0,'angle':0},{'range':2.0,'angle':-0.53},{'range':2.0,'angle':-1.0}]
-        rl_parameters['state_dimension'] = len(cars[0]['sensors'])
-    if args.sensor_length is not None:
-        if args.sensor_length=='long':
-            for i in range(len(cars)):
-                for j in range(len(cars[i]['sensors'])):
-                    cars[i]['sensors'][j]['range'] = 2.0
-        elif args.sensor_length=='short':
-            for i in range(len(cars)):
-                for j in range(len(cars[i]['sensors'])):
-                    cars[i]['sensors'][j]['range'] = 1.0
-    if args.random_position is True:
-        rl_parameters['random_position'] = True
-
-def parse_args():
-    parser = argparse.ArgumentParser(description="RL-Car Project")
-    parser.add_argument("--control", help="static/user/nn",default='static')
-    parser.add_argument("--run_only", dest='run_only', action='store_true', help="epsilon=1,no_training")
-    parser.add_argument("--load_weights", help="path to load saved weights, or \'all\' to load all available weights in succession")
-    parser.add_argument("--env", help="BOX/BIGBOX",default='BOX')
-    parser.add_argument("--random_seed", help="Run reproducable results", default=None, type=int)
-    parser.add_argument("--sensor_length", help="short/long",default=None)
-    parser.add_argument("--random_position", dest='random_position', action='store_true', help="Initialize car position randomly while training")
-    parser.add_argument("--add_more_sensors", dest='add_more_sensors', action='store_true', help="Add 2 more sensors at +-60deg to improve state representation")
-    return parser.parse_args()
-
 if __name__=='__main__':
-    args = parse_args()
-    make_parameter_changes(args)
+    args = Utils.parse_args()
     if args.control=='static':
         static_control(env_select=args.env)
     elif args.control=='user':
         user_control(env_select=args.env)
-    elif args.control=='nn':
-        reinfrocement_neural_network_control(env_select=args.env,load_weights=args.load_weights,run_only=args.run_only,random_seed=args.random_seed,rl_prams=rl_parameters)
+    elif args.control=='rl':
+        reinfrocement_neural_network_control(env_select=args.env,load_weights=args.load_weights,run_only=args.run_only,random_seed=args.random_seed,config_file='config.ini')

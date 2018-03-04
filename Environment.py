@@ -117,6 +117,8 @@ class Car():
         self.score = 0
         self.prev_score = 0
         self.delta_state = np.array([0,0,0])
+        self.total_reward = 0
+        self.epoch = 0
 
     def constrain(self,quantity,c_min,c_max):
         return min(max(quantity,c_min),c_max)
@@ -169,8 +171,9 @@ class Car():
     def get_state_to_train(self,delta_limit):
         s,c = self.encode_angle(self.delta_state[2])
         dist = self.scale(math.sqrt(self.delta_state[0]**2 + self.delta_state[1]**2),0,delta_limit,0,1)
-        dstate = np.array([dist,s,c])
-        return np.around(dstate,decimals=2)
+        #dstate = np.array([dist,s,c]+self.sensor_reading)
+        dstate = np.concatenate(([dist,s,c],self.scale(np.array(self.sensor_reading),0,2,0,1)))
+        return dstate
 
     def reset(self):
         self.gamma = 0 # Steering angle
@@ -183,6 +186,7 @@ class Car():
         self.score = 0
         self.prev_score = 0
         self.delta_state = np.array([0,0,0])
+        self.total_reward = 0
 
 class Environment():
     def __init__(self,environment_details,max_steps):
