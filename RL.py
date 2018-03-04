@@ -156,13 +156,14 @@ class QLearning_NN():
                         debug_data = '[Training]\n'+'Epoch '+str(agent.epoch)+'\nEpsilon='+str(self.parameters['epsilon'])+'\nRun='+str(agent.state)+'\nAvg score='+'{:.2f}'.format(self.log[i]['running_reward'][-1])+'\nAvg loss='+str(self.log[i]['avg_loss'][-1])
                         self.variance = 1-Utils.noraml_scale(self.log[i]['running_reward'][-1],min(self.log[i]['running_reward']),max(self.log[i]['running_reward']))
                         self.variance = max(0.1,min(0.7,self.variance))
-                    env.randomize()
+                    if self.parameters['random_destination_position']==True:
+                        env.randomize()
                 else:
                     self.log[i]['avg_loss'].append(0)
                 terminal_states.append(agent.get_state())
                 terminals.append(i)
                 agent.reset()
-                if self.parameters['random_position']==True:
+                if self.parameters['random_agent_position']==True:
                     agent.random_state([5,5,0],4,np.pi)
                 env.compute_interaction([agent])
         return terminals,terminal_states,debug_data,self.log
@@ -174,7 +175,7 @@ class QLearning_NN():
                 terminal_states.append(agent.state)
                 terminals.append(i)
                 agent.reset()
-                if self.parameters['random_position']==True:
+                if self.parameters['random_agent_position']==True:
                     agent.random_state([5,5,0],4,np.pi)
                 env.compute_interaction([agent])
         return terminals,terminal_states

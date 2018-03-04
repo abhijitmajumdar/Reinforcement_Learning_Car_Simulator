@@ -82,7 +82,7 @@ def user_control(env_select):
                 car_objects[i].update(dt)
                 s_r = car_objects[i].get_sensor_reading()
                 gui.update(i,car_objects[i].get_state())
-                delta = car_objects[i].get_state_to_train()
+                delta = car_objects[i].get_state_to_train(env.max_delta)
                 #debug_data += 'Car '+str(i)+'\nSensor readings:'+', '.join(['{:.2f}'.format(x) for x in s_r])+'\nCar score='+'{:.2f}'.format(car_objects[i].score)+'\n'
                 debug_data += 'Car '+str(i)+'\nSensor readings:'+', '.join(['{:.2f}'.format(x) for x in s_r])+'\nCar score='+', '.join(['{:.2f}'.format(y) for y in delta])+'\n'
             env.compute_interaction(car_objects)

@@ -171,8 +171,9 @@ class Car():
     def get_state_to_train(self,delta_limit):
         s,c = self.encode_angle(self.delta_state[2])
         dist = self.scale(math.sqrt(self.delta_state[0]**2 + self.delta_state[1]**2),0,delta_limit,0,1)
+        dstate = np.array([dist,s,c])
         #dstate = np.array([dist,s,c]+self.sensor_reading)
-        dstate = np.concatenate(([dist,s,c],self.scale(np.array(self.sensor_reading),0,2,0,1)))
+        #dstate = np.concatenate(([dist,s,c],self.scale(np.array(self.sensor_reading),0,2,0,1)))
         return dstate
 
     def reset(self):
