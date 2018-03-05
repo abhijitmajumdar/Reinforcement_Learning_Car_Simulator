@@ -2,7 +2,7 @@ import Environment,GUI,RL,Utils
 
 # Fixed set of velocity and steering set at regular interval.
 # Change the GOALS to desired update of velocity and steering
-def static_control(env_select,config_file='config.ini'):
+def static_control(env_select,config_file):
     _,cars,env_definition = Utils.configurator(config_file)
     Environment.env_generator(env_definition,env_select=env_select)
     env = Environment.Environment(env_definition,10000)
@@ -31,7 +31,7 @@ def static_control(env_select,config_file='config.ini'):
 
 # User controls the movement of all cars simultaneously, using 'w','a','s','d' for forward, left, reverse and right.
 # Can be used to sense how the system works(sensor readings, collisions and car score)
-def user_control(env_select,config_file='config.ini'):
+def user_control(env_select,config_file):
     _,cars,env_definition = Utils.configurator(config_file)
     Environment.env_generator(env_definition,env_select=env_select)
     env = Environment.Environment(env_definition,10000)
@@ -65,7 +65,7 @@ def user_control(env_select,config_file='config.ini'):
             gui.update_debug_info(debug_data)
             gui.refresh()
 
-def reinfrocement_neural_network_control(env_select,load_weights=None,run_only=False,random_seed=None,config_file='config.ini'):
+def reinfrocement_neural_network_control(env_select,config_file,load_weights=None,run_only=False,random_seed=None):
     run=run_only
     rl_prams,cars,env_definition = Utils.configurator(config_file)
     Environment.env_generator(env_definition,env_select=env_select)
@@ -152,4 +152,4 @@ if __name__=='__main__':
     elif args.control=='user':
         user_control(env_select=args.env)
     elif args.control=='rl':
-        reinfrocement_neural_network_control(env_select=args.env,load_weights=args.load_weights,run_only=args.run_only,random_seed=args.random_seed,config_file='config.ini')
+        reinfrocement_neural_network_control(env_select=args.env,config_file=args.config,load_weights=args.load_weights,run_only=args.run_only,random_seed=args.random_seed)
