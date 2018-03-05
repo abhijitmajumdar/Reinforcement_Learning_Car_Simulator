@@ -1,6 +1,7 @@
 import os
-import configparser
+import configobj
 import argparse
+import shutil
 
 def check_directory(directory):
     i = 0
@@ -18,20 +19,27 @@ def noraml_scale(val,mi,ma):
     return (float(val)-mi)/(ma-mi)
 
 def configurator(config_file):
-    config = configparser.ConfigParser(allow_no_value=True)
-    config.read(config_file)
-    rl_p = {}
+    config = configobj.ConfigObj(config_file,unrepr=True)
+    rl_p,cars,env_definition = {},[],{}
     for key in config['Reinforcement Parameters']:
-        rl_p[key] = float(config['Reinforcement Parameters'][key])
-    rl_p['minibatchsize'] = int(rl_p['minibatchsize'])
-    rl_p['batchsize'] = int(rl_p['batchsize'])
+        rl_p[key] = config['Reinforcement Parameters'][key]
     for key in config['Process triggers']:
-        rl_p[key] = config['Process triggers'].getboolean(key)
-    rl_p['actions'] = [[float(x) for x in config['Actions'][y].split(',')] for y in config['Actions']]
+        rl_p[key] = config['Process triggers'][key]
+    rl_p['actions'] = [config['Actions'][y] for y in config['Actions']]
     rl_p['logdir'] = config['Log']['logdir']
     rl_p['activation'] = config['Network']['activation']
-    rl_p['layers'] = [int(x) for x in config['Network']['layers'].split(',')]
-    return rl_p
+    rl_p['layers'] = config['Network']['layers']
+    for key in config['Cars']:
+        car = {}
+        for subkey in config['Cars'][key]:
+            car[subkey] = config['Cars'][key][subkey]
+        car['sensors'] = [car['sensors'][k] for k in car['sensors']]
+        cars.append(car)
+    env_definition = dict(config['Environment'])
+    return rl_p,cars,env_definition
+
+def log_file(f,logdir):
+    shutil.copy(f,logdir)
 
 def parse_args():
     parser = argparse.ArgumentParser(description="RL-Car Project")

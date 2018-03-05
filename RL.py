@@ -52,7 +52,7 @@ class QLearning_NN():
         # Dont use all of my GPU memory
         keras.backend.tensorflow_backend.set_session(tf.Session(config=tf.ConfigProto(log_device_placement=False, gpu_options=tf.GPUOptions(allow_growth=True))))
         self.parameters = dict(rl_params)
-        self.parameters['logdir'] = Utils.check_directory(self.parameters['logdir'])
+        if run_only==False: self.parameters['logdir'] = Utils.check_directory(self.parameters['logdir'])
         self.parameters['output_length'] = len(self.parameters['actions'])
         self.parameters['state_dimension'] = len(sample_state)
         self.parameters['n_agents'] = n_agents
@@ -88,9 +88,10 @@ class QLearning_NN():
         q_vals = self.model.predict(dstate,batch_size=len(agents),verbose=0)
         if epsilon_override is not None:
             epsilon = [epsilon_override]*len(agents)
+        elif self.parameters['adaptive_multi_epsilon_policy']==True:
+            epsilon = np.concatenate(([self.parameters['epsilon']],np.random.uniform(low=max(0,self.parameters['epsilon']-variance),high=min(1,self.parameters['epsilon']+variance),size=len(agents)-1)))
         else:
-            #epsilon = np.concatenate(([self.parameters['epsilon']],np.random.uniform(low=max(0,self.parameters['epsilon']-variance),high=min(1,self.parameters['epsilon']+variance),size=len(agents)-1)))
-            epsilon = np.concatenate(([self.parameters['epsilon']],np.linspace(max(0,self.parameters['epsilon']-variance),min(1,self.parameters['epsilon']+variance),len(agents)-1)))
+            epsilon = [self.parameters['epsilon']]*len(agents)
         r = random.random()
         action = [np.argmax(q_vals[i]) if r<epsilon[i] else np.random.random_integers(0,self.parameters['output_length']-1) for i in range(len(agents))]
         for i in range(len(agents)):
@@ -144,27 +145,31 @@ class QLearning_NN():
                 #self.log[i]['running_reward'].append(np.mean(self.log[i]['total_reward'][-100:]))
                 self.log[i]['running_reward'].append(np.mean(self.log[i]['total_reward']) if len(self.log[i]['total_reward'])>10 else min(self.log[i]['total_reward']))
                 self.log[i]['epoch'].append(agent.epoch)
-                if agent.epoch%5==0: np.save(self.parameters['logdir']+'log_A'+str(i),self.log[i])
                 if i==0:
                     self.log[i]['avg_loss'].append(self.avg_loss/self.itr)
                     if self.replay.minimum_buffer_filled()==True and self.parameters['epsilon']<self.parameters['max_epsilon']:
                         self.parameters['epsilon'] += self.parameters['epsilon_step']
                     self.avg_loss,self.itr = 0,0
-                    if agent.epoch%5==0:
+                    if agent.epoch%20==0:
                         self.model.save_weights(self.parameters['logdir']+'rlcar_epoch_'+str(agent.epoch).zfill(5))
                         print 'Epoch ',agent.epoch,'Epsilon=',self.parameters['epsilon'],'Run=',agent.state,'Avg score=',self.log[i]['running_reward'][-1],'Avg loss=',self.log[i]['avg_loss'][-1]
                         debug_data = '[Training]\n'+'Epoch '+str(agent.epoch)+'\nEpsilon='+str(self.parameters['epsilon'])+'\nRun='+str(agent.state)+'\nAvg score='+'{:.2f}'.format(self.log[i]['running_reward'][-1])+'\nAvg loss='+str(self.log[i]['avg_loss'][-1])
-                        self.variance = 1-Utils.noraml_scale(self.log[i]['running_reward'][-1],min(self.log[i]['running_reward']),max(self.log[i]['running_reward']))
+                        self.variance = 1-Utils.noraml_scale(self.log[i]['running_reward'][-1],min(self.log[i]['running_reward']),max(self.log[i]['running_reward'])) if len(self.log[i]['running_reward'])>40 else min(self.log[i]['running_reward'])
                         self.variance = max(0.1,min(0.7,self.variance))
-                    if self.parameters['random_destination_position']==True:
-                        env.randomize()
                 else:
                     self.log[i]['avg_loss'].append(0)
+                if agent.epoch%5==0: np.save(self.parameters['logdir']+'log_A'+str(i),self.log[i])
                 terminal_states.append(agent.get_state())
                 terminals.append(i)
                 agent.reset()
                 if self.parameters['random_agent_position']==True:
                     agent.random_state([5,5,0],4,np.pi)
+                if self.parameters['random_destination_position']==True:
+                    if self.parameters['different_destinations']==True:
+                        env.randomize([agent])
+                    elif i==0:
+                        env.randomize(agents)
+
                 env.compute_interaction([agent])
         return terminals,terminal_states,debug_data,self.log
 

@@ -119,6 +119,7 @@ class Car():
         self.delta_state = np.array([0,0,0])
         self.total_reward = 0
         self.epoch = 0
+        self.destination = Point((0,0))
 
     def constrain(self,quantity,c_min,c_max):
         return min(max(quantity,c_min),c_max)
@@ -171,9 +172,9 @@ class Car():
     def get_state_to_train(self,delta_limit):
         s,c = self.encode_angle(self.delta_state[2])
         dist = self.scale(math.sqrt(self.delta_state[0]**2 + self.delta_state[1]**2),0,delta_limit,0,1)
-        dstate = np.array([dist,s,c])
+        #dstate = np.array([dist,s,c])
         #dstate = np.array([dist,s,c]+self.sensor_reading)
-        #dstate = np.concatenate(([dist,s,c],self.scale(np.array(self.sensor_reading),0,2,0,1)))
+        dstate = np.concatenate(([dist,s,c],self.scale(np.array(self.sensor_reading),0,2,1,0)))
         return dstate
 
     def reset(self):
@@ -198,7 +199,6 @@ class Environment():
         points.append(points[0])
         for i in range(1,len(points)):
             self.border_segments.append(Vector(Point(points[i-1]),Point(points[i])))
-        self.destination = Point(environment_details['dest'])
         self.destination_radius = environment_details['dest_radius']
         points_np = np.array(points)
         self.limits = (points_np[:,0].min(),points_np[:,0].max(),points_np[:,1].min(),points_np[:,1].max())
@@ -257,11 +257,11 @@ class Environment():
             agent.set_sensor_reading(sensor_values)
             # Calculate euclidian distance from destination
             agent.prev_score = agent.score
-            agent.score = car_pos.distance(self.destination)
+            agent.score = car_pos.distance(agent.destination)
             # Collision update
             inside = self.check_point_inside_polygon(car_pos,self.border_segments)
             # Delta state
-            delta = Vector(car_pos,self.destination)
+            delta = Vector(car_pos,agent.destination)
             agent.delta_state = np.array([delta.vector.x,delta.vector.y,delta.angle()-theta])
             # Update agent condition
             if not inside:
@@ -278,11 +278,13 @@ class Environment():
     def set_max_steps(self,value):
         self.max_steps = value
 
-    def change_destination(self,x,y,buffer_space=0.3):
-        self.destination.x,self.destination.y = self.constrain(x,self.limits[0]+buffer_space,self.limits[1]-buffer_space), self.constrain(y,self.limits[2]+buffer_space,self.limits[3]-buffer_space)
+    def change_destination(self,agent,x,y,buffer_space=0.7):
+        agent.destination.x,agent.destination.y = self.constrain(x,self.limits[0]+buffer_space,self.limits[1]-buffer_space), self.constrain(y,self.limits[2]+buffer_space,self.limits[3]-buffer_space)
 
-    def randomize(self):
-        self.change_destination(random.uniform(self.limits[0],self.limits[1]),random.uniform(self.limits[2],self.limits[3]))
+    def randomize(self,agents):
+        x,y = random.uniform(self.limits[0],self.limits[1]),random.uniform(self.limits[2],self.limits[3])
+        for agent in agents:
+            self.change_destination(agent,x,y)
 
 def env_generator(env_dict,env_select):
     env_dict['path'] = env_dict[env_select][:]
