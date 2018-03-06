@@ -148,8 +148,8 @@ def reinfrocement_neural_network_control(env_select,config_file,load_weights=Non
 if __name__=='__main__':
     args = Utils.parse_args()
     if args.control=='static':
-        static_control(env_select=args.env)
+        static_control(env_select=args.env,config_file=args.config)
     elif args.control=='user':
-        user_control(env_select=args.env)
+        user_control(env_select=args.env,config_file=args.config)
     elif args.control=='rl':
         reinfrocement_neural_network_control(env_select=args.env,config_file=args.config,load_weights=args.load_weights,run_only=args.run_only,random_seed=args.random_seed)

@@ -87,11 +87,17 @@ class GUI(object):
         self.destination_id = self.display.create_oval(dest_pts)
         self.destination = center
 
+    def init_obstacles(self):
+        for obs in self.env['Obstacle']:
+            obs_coords = self.scale_and_offset_center(self.env['Obstacle'][obs])
+            self.display.create_polygon(obs_coords,fill='white',outline='black')
+
     def init_env(self):
         self.set_display_range(min([a for (a,b) in self.env['points']]), max([a for (a,b) in self.env['points']]), min([b for (a,b) in self.env['points']]), max([b for (a,b) in self.env['points']]))
         track_coords = self.scale_and_offset_center(self.env['points'])
         self.track_id = self.display.create_polygon(track_coords,fill='white',outline='black')
         self.init_destination((0,0),self.env['dest_radius'])
+        self.init_obstacles()
 
     def init_car(self):
         for i in range(len(self.cars)):

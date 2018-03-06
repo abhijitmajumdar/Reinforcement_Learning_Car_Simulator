@@ -203,6 +203,15 @@ class Environment():
         points_np = np.array(points)
         self.limits = (points_np[:,0].min(),points_np[:,0].max(),points_np[:,1].min(),points_np[:,1].max())
         self.max_delta = math.sqrt((self.limits[1]-self.limits[0])**2 + (self.limits[3]-self.limits[2])**2)
+        self.obs = []
+        for obs in environment_details['Obstacle']:
+            pts = environment_details['Obstacle'][obs][:]
+            pts.append(pts[0])
+            segs = []
+            for i in range(1,len(pts)):
+                segs.append(Vector(Point(pts[i-1]),Point(pts[i])))
+            self.obs.append(segs)
+        self.buffer_space = environment_details['buffer_space']
 
     def constrain(self,quantity,c_min,c_max):
         return min(max(quantity,c_min),c_max)
@@ -225,6 +234,11 @@ class Environment():
             X = sensor.intersection(seg)
             if X is not None:
                 intersections.append(X)
+        for obs in self.obs:
+            for seg in obs:
+                X = sensor.intersection(seg)
+                if X is not None:
+                    intersections.append(X)
         dist = np.array([pos.distance(p) for p in intersections])
         return pos.distance(intersections[np.argmin(dist)]) if len(dist)>0 else length
 
@@ -259,12 +273,13 @@ class Environment():
             agent.prev_score = agent.score
             agent.score = car_pos.distance(agent.destination)
             # Collision update
-            inside = self.check_point_inside_polygon(car_pos,self.border_segments)
+            inside_env = self.check_point_inside_polygon(car_pos,self.border_segments)
+            outside_obs = all([not self.check_point_inside_polygon(car_pos,obs) for obs in self.obs])
             # Delta state
             delta = Vector(car_pos,agent.destination)
             agent.delta_state = np.array([delta.vector.x,delta.vector.y,delta.angle()-theta])
             # Update agent condition
-            if not inside:
+            if (not inside_env) or (not outside_obs):
                 agent.state = 'collided'
             # Timing
             elif agent.steps > self.max_steps:
@@ -279,12 +294,18 @@ class Environment():
         self.max_steps = value
 
     def change_destination(self,agent,x,y,buffer_space=0.7):
+        p = Point((x,y))
+        if self.check_point_inside_polygon(p,self.border_segments)==False:
+            return
+        for obs in self.obs:
+            if self.check_point_inside_polygon(p,obs)==True:
+                return
         agent.destination.x,agent.destination.y = self.constrain(x,self.limits[0]+buffer_space,self.limits[1]-buffer_space), self.constrain(y,self.limits[2]+buffer_space,self.limits[3]-buffer_space)
 
     def randomize(self,agents):
         x,y = random.uniform(self.limits[0],self.limits[1]),random.uniform(self.limits[2],self.limits[3])
         for agent in agents:
-            self.change_destination(agent,x,y)
+            self.change_destination(agent,x,y,self.buffer_space)
 
 def env_generator(env_dict,env_select):
     env_dict['path'] = env_dict[env_select][:]
