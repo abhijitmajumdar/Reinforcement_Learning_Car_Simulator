@@ -59,7 +59,7 @@ class QLearning_NN():
         self.epoch,self.total_reward,self.avg_score = np.zeros(self.parameters['n_agents']),np.zeros(self.parameters['n_agents']),np.zeros(self.parameters['n_agents'])
         self.itr,self.avg_loss,self.train_hist = 0,0,None
         self.log = [{'avg_loss':[],'total_reward':[],'state':[],'running_reward':[],'epoch':[]} for i in range(self.parameters['n_agents'])]
-        self.replay = ReplayMemory(length=int(self.parameters['buffer_length']), state_length=self.parameters['state_dimension'], defined_terminal_states=['collided','timeup','destination'], minimum_buffer_length=self.parameters['replay_start_at']) if run_only==False else None
+        self.replay = ReplayMemory(length=int(self.parameters['buffer_length']), state_length=self.parameters['state_dimension'], defined_terminal_states=self.parameters['terminal_reward_states'], minimum_buffer_length=self.parameters['replay_start_at']) if run_only==False else None
         self.avg_score_differential = 0
         self.variance = 0
         self.generate_nn()
@@ -109,7 +109,7 @@ class QLearning_NN():
         elif agent.state == 'destination':
             reward = self.parameters['destination_reward']
         else:
-            reward = 0
+            reward = self.parameters['normal_reward']
             #reward = agent.score # Encourages the car to MOVE, not necessarily forward, infact moving in circles is encouraged
             #reward = -30+agent.score # Encourages the car to crash and end its misery
             #reward = -1 # To factor in time but encourages the car to crash and end its misery. Useful if destination reward is high
