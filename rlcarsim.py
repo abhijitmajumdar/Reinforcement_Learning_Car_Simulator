@@ -1,155 +1,130 @@
-import Environment,GUI,RL,Utils
-
-# Fixed set of velocity and steering set at regular interval.
-# Change the GOALS to desired update of velocity and steering
-def static_control(env_select,config_file):
-    _,cars,env_definition = Utils.configurator(config_file)
-    Environment.env_generator(env_definition,env_select=env_select)
-    env = Environment.Environment(env_definition,10000)
-    gui = GUI.GUI(env_definition,cars,['Average loss','Total reward','Running reward'],trace=True)
-    car_objects = [Environment.Car(c) for c in cars]
-    env.compute_interaction(car_objects)
-    GOALS = ((0.33,0),(0.14,0.6),(0.4,0),(0.148,-0.6))
-    while(True):
-        for goal in GOALS:
-            for i in range(len(car_objects)):
-                car_objects[i].set_velocity(goal[0])
-                car_objects[i].set_steering(goal[1])
-            for i in range(100):
-                debug_data = ''
-                for i in range(len(car_objects)):
-                    if car_objects[i].state == 'collided':
-                        debug_data += 'Car '+str(i)+'\nCollided!\n\n'
-                        continue
-                    car_objects[i].update(env_definition['dt'])
-                    s_r = car_objects[i].get_sensor_reading()
-                    gui.update(i,car_objects[i].get_state())
-                    debug_data += 'Car '+str(i)+'\nSensor readings:'+', '.join(['{:.2f}'.format(x) for x in s_r])+'\nCar score='+'{:.2f}'.format(car_objects[i].score)+'\n'
-                env.compute_interaction(car_objects)
-                gui.update_debug_info(debug_data)
-                gui.refresh()
+from Simulator import Environment,GUI,RL,Utils
 
 # User controls the movement of all cars simultaneously, using 'w','a','s','d' for forward, left, reverse and right.
+# Use 'q' to quit and 'r' to reset and randomize agents
 # Can be used to sense how the system works(sensor readings, collisions and car score)
-def user_control(env_select,config_file):
-    _,cars,env_definition = Utils.configurator(config_file)
-    Environment.env_generator(env_definition,env_select=env_select)
-    env = Environment.Environment(env_definition,10000)
-    gui = GUI.GUI(env_definition,cars,['Average loss','Total reward','Running reward'],trace=True)
-    car_objects = [Environment.Car(c) for c in cars]
-    env.compute_interaction(car_objects)
+def user_control(env_select,config_file,multi_agent=False):
+    rl_params,car_definitions,env_definition = Utils.configurator(config_file)
+    cars = [Environment.Car(car) for car in car_definitions] if multi_agent==True else [Environment.Car(car_definitions[0])]
+    env = Environment.Environment(env_definition,env_select=env_select)
+    gui = GUI.GUI(env_definition,env_select,car_definitions,['Average loss','Total reward','Running reward'],trace=True)
+    env.compute_interaction(*cars) # Necessary to ensure vaild values
+    gui.init_destination(False,*cars)
+    # Controls for the user, change as needed
     d = {'w':[0.5,0.0],'s':[-0.5,0.0],'a':[0.5,0.6],'d':[0.5,-0.6],'i':[1.5,0.0],'k':[-1.5,0.0],'j':[1.5,0.1],'l':[1.5,-0.1]}
+    instruction_string = 'User commands\n'+'\n'.join([str(key)+':'+str(d[key]) for key in d])+'\n\n'
+
+    def change_destination():
+        gui.init_destination(True,*cars)
+        if gui.mouse_click_loaction[0] is not None:
+            for car in cars:
+                env.change_destination(car,float(gui.mouse_click_loaction[0]),float(gui.mouse_click_loaction[1]))
+            gui.mouse_click_loaction = [None,None]
+
     while(True):
         user_ip = raw_input()
         if user_ip == 'q': break
+        if user_ip == 'r':
+            for idx,car in enumerate(cars):
+                gui.update(idx,car.get_state(),draw_car=False,force_end_line=True)
+                car.reset()
+            env.randomize(True,True,*cars)
         [v,s] = d[user_ip] if (user_ip in d) else [0,0]
-        for agent in car_objects:
-            agent.set_velocity(v)
-            agent.set_steering(s)
+        for car in cars:
+            car.set_velocity(v)
+            car.set_steering(s)
         for i in range(10):
             debug_data = ''
-            for i in range(len(car_objects)):
-                if car_objects[i].state == 'collided':
-                    debug_data += 'Car '+str(i)+'\nCollided!\n\n'
+            for idx,car in enumerate(cars):
+                if car.physical_state == 'collided' or car.physical_state == 'destination':
+                    debug_data += 'Car '+str(idx)+'\n'+car.physical_state+'!\n\n'
                     continue
-                elif car_objects[i].state == 'destination':
-                    debug_data += 'Car '+str(i)+'\nDestination!\n\n'
-                    continue
-                car_objects[i].update(env_definition['dt'])
-                s_r = car_objects[i].get_sensor_reading()
-                gui.update(i,car_objects[i].get_state())
-                delta = car_objects[i].get_state_to_train(env.max_delta)
-                #debug_data += 'Car '+str(i)+'\nSensor readings:'+', '.join(['{:.2f}'.format(x) for x in s_r])+'\nCar score='+'{:.2f}'.format(car_objects[i].score)+'\n'
-                debug_data += 'Car '+str(i)+'\nSensor readings:'+', '.join(['{:.2f}'.format(x) for x in s_r])+'\nCar score='+', '.join(['{:.2f}'.format(y) for y in delta])+'\n'
-            env.compute_interaction(car_objects)
-            gui.update_debug_info(debug_data)
+                car.update(env_definition['dt'])
+                s_r = car.get_sensor_reading()
+                gui.update(idx,car.get_state())
+                delta = car.get_partial_state()
+                debug_data += 'Car '+str(idx)+'\nSensor readings:'+', '.join(['{:.2f}'.format(x) for x in s_r])+'\nPartial state='+', '.join(['{:.2f}'.format(y) for y in delta])+'\n'
+            env.compute_interaction(*cars)
+            gui.update_debug_info(instruction_string+debug_data)
+            change_destination()
             gui.refresh()
 
-def reinfrocement_neural_network_control(env_select,config_file,load_weights=None,run_only=False,random_seed=None):
+def reinfrocement_neural_network_control(env_select,config_file,load_weights=None,run_only=False):
     run=run_only
-    rl_prams,cars,env_definition = Utils.configurator(config_file)
-    Environment.env_generator(env_definition,env_select=env_select)
-    env = Environment.Environment(env_definition,rl_prams['max_steps'])
-    gui = GUI.GUI(env_definition,cars,['Average loss','Total reward','Running reward'],trace=True)
-    car_objects = [Environment.Car(c) for c in cars]
-    env.compute_interaction(car_objects)
-    rl = RL.QLearning_NN(rl_prams, run_only=run, sample_state=car_objects[0].get_state_to_train(10), n_agents=len(car_objects))
-    Utils.log_file(config_file,rl.parameters['logdir'])
-    if load_weights is not None:
-        rl.load_weights(load_weights)
-    if random_seed is not None: rl.random_seed(random_seed)
+    rl_params,car_definitions,env_definition = Utils.configurator(config_file)
+    car = Environment.Car(car_definitions[0])
+    env = Environment.Environment(env_definition,env_select=env_select)
+    gui = GUI.GUI(env_definition,env_select,[car_definitions[0]],env_definition['graphs'],trace=True)
+    env.compute_interaction(car) # Necessary since rl initialization expects a valid state
+    gui.init_destination(False,car)
+    rl = RL.DQN(rl_params, run_only=run, sample_state=car.get_partial_state(),load_weights=load_weights)
 
     def initialize(run_state):
-        env.compute_interaction(car_objects)
-        for car in car_objects:
-            car.reset()
-            car.get_sensor_reading()
+        car.reset()
+        env.compute_interaction(car)
+        car.get_sensor_reading()
         if run_state==True:
             env.set_max_steps(1500)
-            gui.remove_traces()
-            gui.disable_trace()
+            gui.disable_trace(remove_traces=True)
             gui.set_run_select(gui.runs[1])
             gui.update_debug_info('[Testing]\n'+'Currently learned weights loaded')
         else:
-            env.randomize(car_objects)
-            env.set_max_steps(rl_prams['max_steps'])
+            env.randomize(rl_params['random_agent_position'],rl_params['random_destination_position'],car)
+            env.set_max_steps(env_definition['max_steps'])
             gui.enable_trace()
             gui.set_run_select(gui.runs[0])
             gui.update_debug_info('[Training]\n')
+        env.compute_interaction(car)
 
     def check_run_button(current_state):
         if gui.get_run_select()==gui.runs[0] and current_state==True:
             print '\n\n\nLearning\n'
             initialize(run_state=False)
             return False
-        if gui.get_run_select()==gui.runs[1] and run==False:
+        elif gui.get_run_select()==gui.runs[1] and current_state==False:
             print '\n\n\nRun only\n'
             initialize(run_state=True)
             return True
-        return None
+        else:
+            return current_state
 
     def change_destination():
+        gui.init_destination(True,car)
         if gui.mouse_click_loaction[0] is not None:
-            for car in car_objects:
-                env.change_destination(car,float(gui.mouse_click_loaction[0]),float(gui.mouse_click_loaction[1]))
-        if gui.destination[0]!=car_objects[0].destination.x:
-            gui.init_destination((car_objects[0].destination.x,car_objects[0].destination.y),gui.env['dest_radius'],reinit=True)
+            env.change_destination(car,float(gui.mouse_click_loaction[0]),float(gui.mouse_click_loaction[1]))
             gui.mouse_click_loaction = [None,None]
 
     initialize(run_state=run)
     while(1):
-        new_run_state = check_run_button(current_state=run)
-        if new_run_state is not None: run=new_run_state
+        run = check_run_button(current_state=run)
         change_destination()
         if run==True:
-            terminals,terminal_states = rl.run_step(car_objects,env,env_definition['dt'])
-            for t,ts in zip(terminals,terminal_states):
-                print 'Car',t,':',ts
-            for i in range(len(car_objects)): gui.update(i,car_objects[i].get_state())
-            env.compute_interaction(car_objects)
+            terminal_state,physical_state = rl.run_step(car,env,env_definition['dt'])
+            if physical_state is not None:
+                print 'Car',':',physical_state
+                gui.update(0,terminal_state,draw_car=False,force_end_line=True)
+            gui.update(0,car.get_state())
+            env.compute_interaction(car)
             gui.refresh()
         else:
-            terminals,terminal_states,debug,log = rl.learn_step(car_objects,env,env_definition['dt'])
-            if len(terminals)>0:
-                if debug is not None:
-                    gui.update_debug_info(debug)
-                    log = log[0]
-                    gui.update_graph(log['epoch'],log['avg_loss'],gui.graphs[0])
-                    gui.update_graph(log['epoch'],log['total_reward'],gui.graphs[1])
-                    gui.update_graph(log['epoch'],log['running_reward'],gui.graphs[2])
-                for t,ts in zip(terminals,terminal_states):
-                    gui.update(t,ts,draw_car=False,force_end_line=True)
+            terminal_state,physical_state,debug,log = rl.learn_step(car,env,env_definition['dt'])
+            if debug is not None:
+                gui.update_debug_info(debug)
+                gui.update_graph(log['epoch'],log['avg_loss'],env_definition['graphs'][0])
+                gui.update_graph(log['epoch'],log['total_reward'],env_definition['graphs'][1])
+                gui.update_graph(log['epoch'],log['running_reward'],env_definition['graphs'][2])
+            if physical_state is not None:
+                gui.update(0,terminal_state,draw_car=False,force_end_line=True)
                 gui.refresh()
-            show_cars = (car_objects[0].epoch%100==0)
-            for i in range(len(car_objects)):
-                gui.update(i,car_objects[i].get_state(),draw_car=show_cars)
-            if show_cars==True: gui.refresh()
+            show_car = (car.epoch%100==0)
+            gui.update(0,car.get_state(),draw_car=show_car)
+            if show_car==True: gui.refresh()
 
 if __name__=='__main__':
     args = Utils.parse_args()
-    if args.control=='static':
-        static_control(env_select=args.env,config_file=args.config)
-    elif args.control=='user':
+    if args.control=='user':
         user_control(env_select=args.env,config_file=args.config)
-    elif args.control=='rl':
-        reinfrocement_neural_network_control(env_select=args.env,config_file=args.config,load_weights=args.load_weights,run_only=args.run_only,random_seed=args.random_seed)
+    elif args.control=='multi':
+        user_control(env_select=args.env,config_file=args.config,multi_agent=True)
+    elif args.control=='dqn':
+        reinfrocement_neural_network_control(env_select=args.env,config_file=args.config,load_weights=args.load_weights,run_only=args.run_only)

@@ -4,17 +4,17 @@ import math
 import time
 
 class GUI(object):
-    def __init__(self,environment_details,car_details,graphs,trace=False):
-        self.w,self.h = 1280,720
+    def __init__(self,environment_details,env_select,car_details,graphs,trace=False):
+        self.env = environment_details
+        self.w,self.h = self.env['display_resolution']
         self.graphs = graphs
         self.runs = ['Learn','Run only']
         self.construct_window()
         self.title_label('Reinforcement Learning Car Simulation')
-        self.env = environment_details
         self.cars = [dict(car) for car in car_details]
         self.trace = trace
-        self.trace_history_limit = 10
-        self.init_env()
+        self.trace_history_limit = self.env['trace_history_limit']
+        self.init_env(env_select.split(','))
         self.init_car()
         self.init_graph()
         self.approximator = lambda x: str(round(x, -int(math.floor(math.log10(abs(x))))+3)) if x!=0 else '0'
@@ -58,7 +58,7 @@ class GUI(object):
         x_range,y_range = xmax-xmin+2,ymax-ymin+2
         self.display_w, self.display_h = int(self.display.config()['width'][-1]),int(self.display.config()['height'][-1])
         self.scale_factor = min(self.display_w/x_range, self.display_h/y_range)
-        self.center_offset = (self.scale_factor*2,self.scale_factor*2)
+        self.center_offset = ((1-xmin)*self.scale_factor,(1-ymin)*self.scale_factor)
 
     def scale_and_offset_center(self,list_of_points):
         tr_pts = []
@@ -79,25 +79,45 @@ class GUI(object):
         R = np.array([[ct,-st],[st,ct]])
         return R
 
-    def init_destination(self,center,radius,reinit=False):
-        if reinit==True:
-            self.display.delete(self.destination_id)
+    def set_destination(self,center,radius):
         dest_pts = [(center[0]-radius,center[1]-radius),(center[0]+radius,center[1]+radius)]
         dest_pts = self.scale_and_offset_center(dest_pts)
-        self.destination_id = self.display.create_oval(dest_pts)
-        self.destination = center
+        return self.display.create_oval(dest_pts)
+
+    def init_destination(self,reinit,*agents):
+        radius = self.env['dest_radius']
+        if reinit==False:
+            self.destination = []
+            for agent in agents:
+                center = [agent.destination.x,agent.destination.y]
+                dest_id = self.set_destination(center,radius)
+                self.destination.append(center+[dest_id])
+        else:
+            for idx,agent in enumerate(agents):
+                center = [agent.destination.x,agent.destination.y]
+                if self.destination[idx][0]==center[0]:
+                    continue
+                self.display.delete(self.destination[idx][2])
+                dest_id = self.set_destination(center,radius)
+                self.destination[idx] = center+[dest_id]
 
     def init_obstacles(self):
         for obs in self.env['Obstacle']:
             obs_coords = self.scale_and_offset_center(self.env['Obstacle'][obs])
-            self.display.create_polygon(obs_coords,fill='white',outline='black')
+            self.display.create_polygon(obs_coords,fill='gray30',outline='black')
 
-    def init_env(self):
-        self.set_display_range(min([a for (a,b) in self.env['points']]), max([a for (a,b) in self.env['points']]), min([b for (a,b) in self.env['points']]), max([b for (a,b) in self.env['points']]))
-        track_coords = self.scale_and_offset_center(self.env['points'])
-        self.track_id = self.display.create_polygon(track_coords,fill='white',outline='black')
-        self.init_destination((0,0),self.env['dest_radius'])
-        self.init_obstacles()
+    def init_env(self,select):
+        x_list,y_list = [],[]
+        for arena in select:
+            for pt in self.env[arena]:
+                x_list.append(pt[0])
+                y_list.append(pt[1])
+        xmin,xmax,ymin,ymax = min(x_list),max(x_list),min(y_list),max(y_list)
+        self.set_display_range(xmin,xmax,ymin,ymax)
+        for arena in select:
+            track_coords = self.scale_and_offset_center(self.env[arena])
+            self.track_id = self.display.create_polygon(track_coords,fill='white',outline='black')
+        if self.env['no_obstacles']==False: self.init_obstacles()
 
     def init_car(self):
         for i in range(len(self.cars)):
@@ -191,13 +211,14 @@ class GUI(object):
     def refresh(self):
         self.window.update()
         self.window.update_idletasks()
-        time.sleep(0.005)
+        time.sleep(self.env['display_dk'])
 
     def enable_trace(self):
         self.trace = True
 
-    def disable_trace(self):
+    def disable_trace(self,remove_traces=False):
         self.trace = False
+        if remove_traces==True: self.remove_traces()
 
     def title_label(self,label):
         self.window.title(label)

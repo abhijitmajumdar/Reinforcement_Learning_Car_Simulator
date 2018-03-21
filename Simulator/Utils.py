@@ -3,6 +3,9 @@ import configobj
 import argparse
 import shutil
 
+def log_file(f,logdir):
+    shutil.copy(f,logdir)
+
 def check_directory(directory):
     i = 0
     while(True):
@@ -12,11 +15,6 @@ def check_directory(directory):
             os.makedirs(d)
             break
     return directory+str(i)+'/'
-
-def noraml_scale(val,mi,ma):
-    if mi==ma:
-        return mi
-    return (float(val)-mi)/(ma-mi)
 
 def configurator(config_file):
     config = configobj.ConfigObj(config_file,unrepr=True)
@@ -35,18 +33,19 @@ def configurator(config_file):
             car[subkey] = config['Cars'][key][subkey]
         car['sensors'] = [car['sensors'][k] for k in car['sensors']]
         cars.append(car)
-    env_definition = dict(config['Environment'])
+    env_definition = dict(config['Arena'])
+    env_definition['Obstacle'] = dict(config['Obstacle'])
+    # Make a new directory to log files
+    rl_p['logdir'] = check_directory(rl_p['logdir'])
+    # Save a copy of the config file in the log directory
+    log_file(config_file,rl_p['logdir'])
     return rl_p,cars,env_definition
-
-def log_file(f,logdir):
-    shutil.copy(f,logdir)
 
 def parse_args():
     parser = argparse.ArgumentParser(description="RL-Car Project")
-    parser.add_argument("--control", help="static/user/rl",default='static')
+    parser.add_argument("--control", help="user/multi/dqn",default='user')
     parser.add_argument("--run_only", dest='run_only', action='store_true', help="epsilon=1,no_training")
     parser.add_argument("--load_weights", help="path to load saved weights")
-    parser.add_argument("--env", help="BOX/BIGBOX",default='BOX')
-    parser.add_argument("--random_seed", help="Run reproducable results", default=None, type=int)
-    parser.add_argument("--config", help="path to config file",default='config.ini')
+    parser.add_argument("--env", help="select environment from config. In case of multi arena use comma seperated, ex: --env BOX,H",default='BOX')
+    parser.add_argument("--config", help="path to config file",default='Configurations/config.ini')
     return parser.parse_args()

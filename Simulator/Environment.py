@@ -99,16 +99,17 @@ class Car():
     # Bicycle model (Not to be mistaken for Ackerman model)
     # Current version: Robotics, Vision and Control by Peter Croke - 4.2 Car-like Mobile Robots
     # Another version: http://www.me.berkeley.edu/~frborrel/pdfpub/IV_KinematicMPC_jason.pdf
-    def __init__(self,car_detail=None):
+    def __init__(self,car_detail):
         self.detail = car_detail
         # Controls
-        self.gamma = 0 # Steering angle
+        self.psi = 0 # Steering angle
         self.v = 0 # Heading velocity
         # States
-        self.theta = self.detail['state'][2] # Heading angle
+        self.omega = self.detail['state'][2] # Heading angle
         self.x = self.detail['state'][0] # Position x
         self.y = self.detail['state'][1] # Position y
-        self.state = 'running' # or collided
+        self.physical_state = 'running' # or collided
+        self.phi = np.array([0,0,0])
         # Sensing
         self.sensor_reading = None
         # Timing
@@ -116,10 +117,11 @@ class Car():
         # Scoring
         self.score = 0
         self.prev_score = 0
-        self.delta_state = np.array([0,0,0])
         self.total_reward = 0
         self.epoch = 0
-        self.destination = Point((0,0))
+        # Configuration
+        self.destination = Point(self.detail['destination'])
+        self.connection = car_detail['connection']-1 if 'connection' in car_detail else 0
 
     def constrain(self,quantity,c_min,c_max):
         return min(max(quantity,c_min),c_max)
@@ -127,20 +129,17 @@ class Car():
     def wrap_angle(self,val):
         return( ( val + np.pi) % (2 * np.pi ) - np.pi )
 
-    def encode_angle(self,val):
-        return [math.sin(val),math.cos(val)]
-
     def update(self,dt):
-        self.x += dt*self.v*math.cos(self.theta)
-        self.y += dt*self.v*math.sin(self.theta)
-        self.theta += (dt*self.v/self.detail['L'])*math.tan(self.gamma)
-        self.theta = self.wrap_angle(self.theta)
+        self.x += dt*self.v*math.cos(self.omega)
+        self.y += dt*self.v*math.sin(self.omega)
+        self.omega += (dt*self.v/self.detail['L'])*math.tan(self.psi)
+        self.omega = self.wrap_angle(self.omega)
 
     def set_steering(self,angle):
-        self.gamma = self.constrain(angle,-self.detail['gamma_limit'],self.detail['gamma_limit'])
+        self.psi = self.constrain(angle,-self.detail['gamma_limit'],self.detail['gamma_limit'])
 
     def get_steering(self):
-        return self.gamma
+        return self.psi
 
     def set_velocity(self,velocity):
         self.v = self.constrain(velocity,-self.detail['v_limit'],self.detail['v_limit'])
@@ -149,10 +148,10 @@ class Car():
         return self.v
 
     def set_state(self,state):
-        self.x,self.y,self.theta = state
+        self.x,self.y,self.omega = state
 
     def get_state(self):
-        return self.x,self.y,self.theta
+        return self.x,self.y,self.omega
 
     def set_sensor_reading(self,reading):
         self.sensor_reading = reading
@@ -160,61 +159,62 @@ class Car():
     def get_sensor_reading(self):
         return self.sensor_reading
 
-    def get_delta_state(self):
-        return self.delta_state
+    def get_partial_state(self):
+        return self.phi
 
     def random_state(self,mean,variance,angle_variance):
         self.set_state([mean[0]+random.uniform(-variance,variance), mean[1]+random.uniform(-variance,variance), mean[2]+random.uniform(-angle_variance,angle_variance)])
 
-    def scale(self,val,valmin,valmax,mi,ma):
-        return ((val-valmin) * float(ma-mi)/(valmax-valmin))+mi
-
-    def get_state_to_train(self,delta_limit):
-        s,c = self.encode_angle(self.delta_state[2])
-        dist = self.scale(math.sqrt(self.delta_state[0]**2 + self.delta_state[1]**2),0,delta_limit,0,1)
-        #dstate = np.array([dist,s,c])
-        #dstate = np.array([dist,s,c]+self.sensor_reading)
-        dstate = np.concatenate(([dist,s,c],self.scale(np.array(self.sensor_reading),0,2,1,0)))
-        return dstate
-
     def reset(self):
-        self.gamma = 0 # Steering angle
+        self.psi = 0 # Steering angle
         self.v = 0 # Heading velocity
-        self.theta = self.detail['state'][2] # Heading angle
+        self.omega = self.detail['state'][2] # Heading angle
         self.x = self.detail['state'][0] # Position x
         self.y = self.detail['state'][1] # Position y
-        self.state = 'running' # or collided
+        self.physical_state = 'running' # or collided
         self.steps = 0
         self.score = 0
         self.prev_score = 0
-        self.delta_state = np.array([0,0,0])
+        self.phi = np.array([0,0,0])
         self.total_reward = 0
 
 class Environment():
-    def __init__(self,environment_details,max_steps):
-        self.max_steps = max_steps
-        self.start_angle = environment_details['start_angle']
-        self.border_segments = []
-        points = environment_details['points'][:]
-        points.append(points[0])
-        for i in range(1,len(points)):
-            self.border_segments.append(Vector(Point(points[i-1]),Point(points[i])))
-        self.destination_radius = environment_details['dest_radius']
-        points_np = np.array(points)
-        self.limits = (points_np[:,0].min(),points_np[:,0].max(),points_np[:,1].min(),points_np[:,1].max())
-        self.max_delta = math.sqrt((self.limits[1]-self.limits[0])**2 + (self.limits[3]-self.limits[2])**2)
-        self.obs = []
-        for obs in environment_details['Obstacle']:
-            pts = environment_details['Obstacle'][obs][:]
+    def __init__(self,environment_details,env_select):
+        env_select = env_select.split(',')
+        if environment_details['path_creator']==True:
+            self.env_generator(environment_details,env_select[0])
+        self.arenas = []
+        for env in env_select:
+            pts = environment_details[env][:]
             pts.append(pts[0])
             segs = []
             for i in range(1,len(pts)):
                 segs.append(Vector(Point(pts[i-1]),Point(pts[i])))
-            self.obs.append(segs)
+            points_np = np.array(pts)
+            limits = (points_np[:,0].min(),points_np[:,0].max(),points_np[:,1].min(),points_np[:,1].max())
+            max_delta = math.sqrt((limits[1]-limits[0])**2 + (limits[3]-limits[2])**2)
+            self.arenas.append({'segments':segs,'limits':limits,'max_delta':max_delta})
+        self.obs = []
+        if environment_details['no_obstacles']==False:
+            for obs in environment_details['Obstacle']:
+                pts = environment_details['Obstacle'][obs][:]
+                pts.append(pts[0])
+                segs = []
+                for i in range(1,len(pts)):
+                    segs.append(Vector(Point(pts[i-1]),Point(pts[i])))
+                self.obs.append(segs)
+        self.max_steps = environment_details['max_steps']
+        self.destination_radius = environment_details['dest_radius']
         self.buffer_space = environment_details['buffer_space']
 
     def constrain(self,quantity,c_min,c_max):
         return min(max(quantity,c_min),c_max)
+
+    def scale(self,val,valmin,valmax,mi,ma):
+        return ((val-valmin) * float(ma-mi)/(valmax-valmin))+mi
+
+    def encode_angle(self,val):
+        return [math.sin(val),math.cos(val)]
 
     def rotation_matrix(self,theta):
         ct = math.cos(theta)
@@ -222,7 +222,7 @@ class Environment():
         R = np.array([[ct,-st],[st,ct]])
         return R
 
-    def find_range(self,pos,angle,length):
+    def find_range(self,pos,angle,length,segs):
         R = self.rotation_matrix(angle)
         points = np.array([ [0,0],[length,0] ]).T
         points = np.dot(R,points)
@@ -230,7 +230,7 @@ class Environment():
         points[1,:] += pos.y
         sensor = Vector(Point((points[0][0],points[1][0])),Point((points[0][1],points[1][1])))
         intersections = []
-        for seg in self.border_segments:
+        for seg in segs:
             X = sensor.intersection(seg)
             if X is not None:
                 intersections.append(X)
@@ -260,54 +260,95 @@ class Environment():
         inside = len([i for i in intercepts if i is None])%2 != 0
         return inside
 
-    def compute_interaction(self,agents):
+    def compute_interaction(self,*agents):
         for agent in agents:
-            x,y,theta = agent.get_state()
+            x,y,omega = agent.get_state()
             car_pos = Point((x,y))
+            segs = self.arenas[agent.connection]['segments']
             # Sensor update
             sensor_values = []
             for s in agent.detail['sensors']:
-                sensor_values.append(self.find_range(car_pos,theta+s['angle'],s['range']))
+                sensor_values.append(self.find_range(car_pos,omega+s['angle'],s['range'],segs))
             agent.set_sensor_reading(sensor_values)
             # Calculate euclidian distance from destination
             agent.prev_score = agent.score
             agent.score = car_pos.distance(agent.destination)
             # Collision update
-            inside_env = self.check_point_inside_polygon(car_pos,self.border_segments)
+            inside_env = self.check_point_inside_polygon(car_pos,segs)
             outside_obs = all([not self.check_point_inside_polygon(car_pos,obs) for obs in self.obs])
             # Delta state
             delta = Vector(car_pos,agent.destination)
-            agent.delta_state = np.array([delta.vector.x,delta.vector.y,delta.angle()-theta])
+            s,c = self.encode_angle(delta.angle()-omega)
+            dist = self.scale(delta.length(),0,self.arenas[agent.connection]['max_delta'],0,1)
+            #agent.phi = np.concatenate(([dist,s,c],self.scale(np.array(sensor_values),0,agent.detail['sensors']['S1']['range'],1,0)))
+            agent.phi = np.concatenate(([dist,s,c],self.scale(np.array(sensor_values),0,2,1,0)))
             # Update agent condition
-            if (not inside_env) or (not outside_obs):
-                agent.state = 'collided'
+            if (not inside_env) or (not outside_obs): agent.physical_state = 'collided'
             # Timing
-            elif agent.steps > self.max_steps:
-                agent.state = 'timeup'
+            elif agent.steps > self.max_steps: agent.physical_state = 'timeup'
             # Check destination reached
-            elif agent.score<self.destination_radius:
-                agent.state = 'destination'
-            if agent.state=='running':
-                agent.steps += 1
+            elif agent.score<self.destination_radius: agent.physical_state = 'destination'
+            if agent.physical_state=='running': agent.steps += 1
 
     def set_max_steps(self,value):
         self.max_steps = value
 
-    def change_destination(self,agent,x,y,buffer_space=0.7):
-        p = Point((x,y))
-        if self.check_point_inside_polygon(p,self.border_segments)==False:
-            return
-        for obs in self.obs:
-            if self.check_point_inside_polygon(p,obs)==True:
-                return
-        agent.destination.x,agent.destination.y = self.constrain(x,self.limits[0]+buffer_space,self.limits[1]-buffer_space), self.constrain(y,self.limits[2]+buffer_space,self.limits[3]-buffer_space)
+    def check_valid_point(self,pt,agent):
+        if self.check_point_inside_polygon(pt,self.arenas[agent.connection]['segments'])==True:
+            if all([not self.check_point_inside_polygon(pt,obs) for obs in self.obs])==True:
+                return True
+        return False
 
-    def randomize(self,agents):
-        x,y = random.uniform(self.limits[0],self.limits[1]),random.uniform(self.limits[2],self.limits[3])
+    def change_destination(self,agent,x,y):
+        p = Point((self.constrain(x,self.arenas[agent.connection]['limits'][0]+self.buffer_space,self.arenas[agent.connection]['limits'][1]-self.buffer_space),self.constrain(y,self.arenas[agent.connection]['limits'][2]+self.buffer_space,self.arenas[agent.connection]['limits'][3]-self.buffer_space)))
+        if self.check_valid_point(p,agent)==True: agent.destination.x, agent.destination.y = p.x, p.y
+
+    def random_valid_position(self,agent):
+        p = Point((0,0))
+        while(True):
+            p.x,p.y = self.constrain(
+                        random.uniform(self.arenas[agent.connection]['limits'][0],self.arenas[agent.connection]['limits'][1]),
+                        self.arenas[agent.connection]['limits'][0]+self.buffer_space,
+                        self.arenas[agent.connection]['limits'][1]-self.buffer_space
+                        ), self.constrain(
+                        random.uniform(self.arenas[agent.connection]['limits'][2],self.arenas[agent.connection]['limits'][3]),
+                        self.arenas[agent.connection]['limits'][2]+self.buffer_space,
+                        self.arenas[agent.connection]['limits'][3]-self.buffer_space
+                        )
+            if self.check_valid_point(p,agent)==True: break
+        return p
+
+    def randomize(self,agent_position,destination_position,*agents):
         for agent in agents:
-            self.change_destination(agent,x,y,self.buffer_space)
+            if agent_position==True:
+                rp = self.random_valid_position(agent)
+                agent.x,agent.y = rp.x,rp.y
+                agent.omega = random.uniform(-np.pi,np.pi)
+            if destination_position==True:
+                rp = self.random_valid_position(agent)
+                agent.destination.x,agent.destination.y = rp.x,rp.y
 
-def env_generator(env_dict,env_select):
-    env_dict['path'] = env_dict[env_select][:]
-    env_dict['points'] = env_dict[env_select][:]
-    env_dict['start_angle'] = 0.0
+    def env_generator(self,env_dict,select):
+        path = env_dict[select][:]
+        d = env_dict['track_width']
+        start_angle = 0.0
+        side_L,side_R = [],[]
+        for i in range(len(path)):
+            p1,p2,p3 = None,Point(path[i]),None
+            if i==0:
+                p3 = Point(path[i+1])
+                u = Vector(p3,p2).unit_vector()
+                p1 = u.vector*d + p2
+                start_angle = Vector(p2,p3).angle()
+            elif i==(len(path)-1):
+                p1 = Point(path[i-1])
+                u = Vector(p1,p2).unit_vector()
+                p3 = u.vector*d + p2
+            else:
+                p1 = Point(path[i-1])
+                p3 = Point(path[i+1])
+            perp_unit_vec = Vector(p1,p3).perpendicular().unit_vector()
+            pl,pr = p2+perp_unit_vec.vector*d, p2-perp_unit_vec.vector*d
+            side_L.append((pl.x,pl.y))
+            side_R.append((pr.x,pr.y))
+        env_dict[select] = side_R + side_L[::-1]
