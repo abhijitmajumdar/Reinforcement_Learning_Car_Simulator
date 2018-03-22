@@ -1,13 +1,14 @@
 # Reinforcement Learning Car Simulator
-A multi agent multi arena car simulator oriented towards Reinforcement Learning. Provides functionality of defining multiples similar or different cars(agents) in single or multiple arenas(environment), with each car having sensing capability with the use of obstacle detector similar to a laser range-finder.
-A project to show how RL (specifically Q-learning) can be applied to make a car learn to navigate through an arbitrary track without colliding, given a couple of distance sensors. Example with the use of Deep Q Learning (DQN) is provided for single agent in different arenas.
+A multi agent multi arena car simulator oriented towards Reinforcement Learning. Provides functionality of defining multiples similar or different cars(agents) in single or multiple arenas(environment), with each car having sensing capability with the use of obstacle detector similar to a laser range-finder. Simulator is capable of running multiple instances simultaneously while logging all data separately. Example with the use of Deep Q Learning (DQN) is provided for single agent in different arenas.
 
-[//]: # "![Learning demo](/Images/rlcarsim_demo.gif?raw=true "Demo")"
-[//]: # "Learning"
-
-[//]: # "![Run only demo](/Images/rlcarsim_learned_demo_long.gif?raw=true "Demo")"
-[//]: # "![Run only demo](/Images/rlcarsim_learned_demo.gif?raw=true "Demo")"
-[//]: # "Learned"
+Example of learning an arena using DQN:
+![Learning](/Images/rlcarsim_demo3.gif?raw=true "Learning")
+<br/><br/><br/><br/>
+Examples of learned policy evaluation:<br/>
+<img src="/Images/rlcarsim_demo5.gif" width="35%"> <img src="/Images/rlcarsim_demo4.gif" width="35%">
+<img src="/Images/rlcarsim_demo1.gif" width="35%"> <img src="/Images/rlcarsim_demo2.gif" width="35%">
+<br/>Other examples of arenas:<br/>
+<img src="/Images/rlcarsim_user_mama_boxh.png" width="55%"> <img src="/Images/rlcarsim_user_multiagent_room.png" width="28%"><br/>
 
 ## Dependencies
 - Python built-in modules:
@@ -72,6 +73,10 @@ The goal was to create a customized environment, where a car like object can be 
 Almost everything used in the simulator is configurable using a configuration file. Sample configuration files for different use of the simulator are provided in the `Configurations` folder, which can be referred to construct a different setup if needed. More details about the configuration files later. Using the argument `--control user` or `--control multi` with the configuration files gives the user the ability to test the arenas, obstacles and the interactions of the cars with them form the terminal. When starting such a user based control, the cars may not be visible initially; in such cases press `r` in the terminal to reset the environment.
 
 The simulator is oriented towards *Reinforcement Learning (RL)*, and an example use of RL with the simulator can be run using the argument `--control dqn` to run the `rlcarsim.py` file which uses a Deep Q Network (DQN) to learn for a car to reach its goal using the default configuration file. The implementation of the DQN algorithm is made in the `RL.py` file. The learned weights can be loaded using the command line argument `--load_weights <path_to_weights>`, which can be used to resume training or load a checkpoint to observe evaluation using additional argument `--run_only`.
+
+One of the key advantages of the simulator is being lightweight, multiple instances can be run at the same time. One need not make copy of the source files, since the simulator logs each run separately, and hence has no issue of overwriting. As a result all instances can be run from the same folder. This is useful in cases where one needs to test different configurations to find the best one. An example of 4 instances (2 same and 2 different) of the simulator on an *i5-6600 + GTX1080* is shown below.
+
+![Simultaneous instance runs](/Images/rlcarsim_mi.png?raw=true "Simultaneous instance runs")
 
 ## Modules
 ##### Environment
