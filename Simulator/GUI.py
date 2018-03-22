@@ -9,6 +9,7 @@ class GUI(object):
         self.w,self.h = self.env['display_resolution']
         self.graphs = graphs
         self.runs = ['Learn','Run only']
+        self.COLORS = ['RoyalBlue2','SlateGray2','dark khaki','DarkOrange1','turquoise1','indian red','MediumPurple1','lemon chiffon','PaleVioletRed1','gold','PaleGreen1','salmon2'] if environment_details['color_coding']==True else ['blue']*12
         self.construct_window()
         self.title_label('Reinforcement Learning Car Simulation')
         self.cars = [dict(car) for car in car_details]
@@ -79,26 +80,25 @@ class GUI(object):
         R = np.array([[ct,-st],[st,ct]])
         return R
 
-    def set_destination(self,center,radius):
-        dest_pts = [(center[0]-radius,center[1]-radius),(center[0]+radius,center[1]+radius)]
-        dest_pts = self.scale_and_offset_center(dest_pts)
-        return self.display.create_oval(dest_pts)
-
     def init_destination(self,reinit,*agents):
         radius = self.env['dest_radius']
         if reinit==False:
             self.destination = []
-            for agent in agents:
+            for idx,agent in enumerate(agents):
                 center = [agent.destination.x,agent.destination.y]
-                dest_id = self.set_destination(center,radius)
+                dest_pts = [(center[0]-radius,center[1]-radius),(center[0]+radius,center[1]+radius)]
+                dest_pts = self.scale_and_offset_center(dest_pts)
+                dest_id = self.display.create_oval(dest_pts,fill=self.COLORS[idx%12])
                 self.destination.append(center+[dest_id])
         else:
             for idx,agent in enumerate(agents):
                 center = [agent.destination.x,agent.destination.y]
                 if self.destination[idx][0]==center[0]:
                     continue
-                self.display.delete(self.destination[idx][2])
-                dest_id = self.set_destination(center,radius)
+                dest_pts = [(center[0]-radius,center[1]-radius),(center[0]+radius,center[1]+radius)]
+                dest_pts = self.scale_and_offset_center(dest_pts)
+                dest_id = self.destination[idx][2]
+                self.display.coords(dest_id, *dest_pts)
                 self.destination[idx] = center+[dest_id]
 
     def init_obstacles(self):
@@ -132,7 +132,7 @@ class GUI(object):
             points = np.dot(R,points)
             points[0,:] += self.cars[i]['state'][0]
             points[1,:] += self.cars[i]['state'][1]
-            self.cars[i]['gui_body_id'] = self.display.create_polygon(self.scale_and_offset_center(points.T),fill='blue',outline='black')
+            self.cars[i]['gui_body_id'] = self.display.create_polygon(self.scale_and_offset_center(points.T),fill=self.COLORS[i%12],outline='black')
             # Sensor
             for j in range(len(self.cars[i]['sensors'])):
                 sa,sr = self.cars[i]['sensors'][j]['angle'],self.cars[i]['sensors'][j]['range']
