@@ -4,7 +4,7 @@ import math
 import time
 
 class GUI(object):
-    def __init__(self,environment_details,env_select,car_details,graphs,trace=False):
+    def __init__(self,environment_details,arena_select,car_details,graphs,trace=False):
         self.env = environment_details
         self.w,self.h = self.env['display_resolution']
         self.graphs = graphs
@@ -15,7 +15,7 @@ class GUI(object):
         self.cars = [dict(car) for car in car_details]
         self.trace = trace
         self.trace_history_limit = self.env['trace_history_limit']
-        self.init_env(env_select.split(','))
+        self.init_env(arena_select.split(','))
         self.init_car()
         self.init_graph()
         self.approximator = lambda x: str(round(x, -int(math.floor(math.log10(abs(x))))+3)) if x!=0 else '0'
@@ -101,23 +101,23 @@ class GUI(object):
                 self.display.coords(dest_id, *dest_pts)
                 self.destination[idx] = center+[dest_id]
 
-    def init_obstacles(self):
-        for obs in self.env['Obstacle']:
-            obs_coords = self.scale_and_offset_center(self.env['Obstacle'][obs])
-            self.display.create_polygon(obs_coords,fill='gray30',outline='black')
-
     def init_env(self,select):
         x_list,y_list = [],[]
         for arena in select:
-            for pt in self.env[arena]:
+            if not arena in self.env['Arena']:
+                raise Exception('Seleted arena '+arena+' not defined in configuration')
+            for pt in self.env['Arena'][arena]['points']:
                 x_list.append(pt[0])
                 y_list.append(pt[1])
         xmin,xmax,ymin,ymax = min(x_list),max(x_list),min(y_list),max(y_list)
         self.set_display_range(xmin,xmax,ymin,ymax)
         for arena in select:
-            track_coords = self.scale_and_offset_center(self.env[arena])
-            self.track_id = self.display.create_polygon(track_coords,fill='white',outline='black')
-        if self.env['no_obstacles']==False: self.init_obstacles()
+            arena_coords = self.scale_and_offset_center(self.env['Arena'][arena]['points'])
+            self.arena_id = self.display.create_polygon(arena_coords,fill='white',outline='black')
+            if 'obstacles' in self.env['Arena'][arena]:
+                for obs in self.env['Arena'][arena]['obstacles']:
+                    obs_coords = self.scale_and_offset_center(obs)
+                    self.display.create_polygon(obs_coords,fill='gray30',outline='black')
 
     def init_car(self):
         for i in range(len(self.cars)):
@@ -213,8 +213,9 @@ class GUI(object):
         self.window.update_idletasks()
         time.sleep(self.env['display_dk'])
 
-    def enable_trace(self):
+    def enable_trace(self,remove_traces=False):
         self.trace = True
+        if remove_traces==True: self.remove_traces()
 
     def disable_trace(self,remove_traces=False):
         self.trace = False

@@ -38,32 +38,32 @@ Almost every setting can be configured using a configuration file. Sample config
 
 Run with predefined velocities and steering, with user controlling all cars(w/a/s/d), with single or multiple cars:
 ```sh
-$ python rlcarsim.py --control multi --config Configurations/config_arenas.ini --env BOX
-$ python rlcarsim.py --control multi --config Configurations/config_arenas.ini --env ROOM
-$ python rlcarsim.py --control user --config Configurations/config_arenas.ini --env SHAPE
-$ python rlcarsim.py --control user --config Configurations/config_arenas.ini --env H
-$ python rlcarsim.py --control user --config Configurations/config_arenas.ini --env CIRCLE
+$ python rlcarsim.py --control user --config Configurations/config_singleagent.ini --arena BOX
+$ python rlcarsim.py --control user --config Configurations/config_multiagent.ini --arena ROOM
+$ python rlcarsim.py --control user --config Configurations/config_singleagent.ini --arena SHAPE
+$ python rlcarsim.py --control user --config Configurations/config_multiagent.ini --arena H
+$ python rlcarsim.py --control user --config Configurations/config_multiagent.ini --arena CIRCLE
 ```
 
 Run with user control, on multiple cars and multiple arenas:
 ```sh
-$ python rlcarsim.py --control multi --config Configurations/config_multi_agent_arena.ini --env BOX,H
-$ python rlcarsim.py --control multi --config Configurations/config_multi_agent_arena.ini --env BOX,H,CIRCLE
-$ python rlcarsim.py --control multi --config Configurations/config_multi_agent_arena.ini --env BOX,CIRCLE
+$ python rlcarsim.py --control user --config Configurations/config_multiagent_multiarena.ini --arena BOX,H
+$ python rlcarsim.py --control user --config Configurations/config_multiagent_multiarena.ini --arena BOX,H,CIRCLE
+$ python rlcarsim.py --control user --config Configurations/config_multiagent_multiarena.ini --arena BOX,CIRCLE
 ```
 
 Train a model using DQN in the BOX environment with an obstacle (The training and validation can be switched in the GUI as well, as described later):
 ```sh
-$ python rlcarsim.py --control dqn --config Configurations/config_box_obs.ini --env BOX
+$ python rlcarsim.py --control dqn --config Configurations/config_singleagent.ini --arena BOX
 ```
-Test the model in the BIGBOX environment with an obstacle by loading weights *rlcar_epoch_00600* in run 5(folder inside weights directory):
+Test the model in a different(BIGBOX) environment with an obstacle by loading weights *rlcar_epoch_00600* in run 5(folder inside weights directory):
 ```sh
-$ python rlcarsim.py --control dqn --config Configurations/config_bigbox_obs.ini --env BIGBOX --run_only --load_weights weights/5/rlcar_epoch_00600
+$ python rlcarsim.py --control dqn --config Configurations/config_singleagent.ini --arena BIGBOX --run_only --load_weights weights/5/rlcar_epoch_00600
 ```
 
-Train a model using DQN in the TRACK(path creator) environment without obstacles:
+Train a model using DQN in the TRACK(which uses path creator to convert path points into polygon points, enabled in the config file) environment without obstacles:
 ```sh
-$ python rlcarsim.py --control dqn --config Configurations/config_track.ini --env TRACK
+$ python rlcarsim.py --control dqn --config Configurations/config_track.ini --arena TRACK
 ```
 
 
@@ -82,7 +82,7 @@ One of the key advantages of the simulator is being lightweight, multiple instan
 ##### Environment
 The environment and the car objects are defined in this file and computes interactions between all physical objects in the environment using vector geometry. The car dynamics are based on the Bicycle model of a car. The car objects save properties related to the car, like the state, the sensor values and other scoring and configuration settings defined in the configuration file. The destination is set individually for each car, so that in a multi agent setup, different destinations for each agent can be assigned. The environment updates the interactions and modifies the state of the car and sensors accordingly. The sensors on the car are shown with a red line, indicating the range of sensing for each sensor. They act as distance sensors, providing the distance to the nearest obstruction to the *sensing ray*. Practically these sensors can be thought of as either sonar sensors, infrared sensors or even laser range finders.
 
-The module uses the user argument to figure out which environment to interact with, which may be a multi arena setup. In case of a multi-arena setup, each agent is assigned a *connection* value which specifies the arena they belong to. Configurablity to use the obstacles defined in the configuration file is also provided. There are two methods in which this module interprets the arena, one in which the points defining a polygon for an arena may be defined, and the other where the points represent a path along which a track of *track_width* width is computed. This is configurable and can be used to form different types of arenas.
+The module uses the user argument to figure out which environment to interact with, which may be a multi arena setup. In case of a multi-arena setup, each agent is assigned a *connection* value which specifies the arena they belong to. There are two methods in which this module interprets the arena, one in which the points defining a polygon for an arena may be defined, and the other where the points represent a path along which a track of *track_width* width is computed. In case of a track like arena, the user needs to define only path along which the track is needed, and set *path_creator* to *True*, which creates a track. This is configurable and can be used to form different types of arenas. **When using track like arena, make sure random_agent_position and random_agent_position are set to False in the config file to ensure proper learning.**
 
 The configurable parameters to define if the agent(s) and destination(s) are reset to random positions are available and make sure the reset positions are valid.
 
@@ -99,7 +99,7 @@ The algorithms, methods and parameters used are largely influenced by the follow
 - Reinforcement Learning course by David Silver. http://www0.cs.ucl.ac.uk/staff/d.silver/web/Teaching.html
 - https://github.com/harvitronix/reinforcement-learning-car
 
-\*~~I think epsilon=0.7 in the epsilon-greedy policy means, be greedy to follow the learned policy(determined by the action-value function) 70%(epsilon) of the time. However the epsilon used in the paper is in a reverse manner, and hence propagates from 1.0 to 0.1, while the epsilon in this project propagates from 0.0 to 0.9.~~ After inspecting the paper, I realized that the epsilon-greedy policy is with respect to exploration, and hence it makes sense to use epsilon as the probability to use random actions. However, I keep the use of epsilon inverted in this project.
+\*~~I think epsilon=0.7 in the epsilon-greedy policy means, be greedy to follow the learned policy(determined by the action-value function) 70%(epsilon) of the time. However the epsilon used in the paper is in a reverse manner, and hence propagates from 1.0 to 0.1, while the epsilon in this project propagates from 0.0 to 0.9.~~ After inspecting the paper, I realized that the epsilon-greedy policy is with respect to exploration, and hence it makes sense to use epsilon as the probability to use random actions. ~~However, I keep the use of epsilon inverted in this project.~~ Epsilon now varies as convention
 
 ##### Utils
 Consists of methods to parse the command line arguments and the configuration file. Also performs checking and creating new directory for current run (indexed by run iteration) inside the log directory.
@@ -110,7 +110,24 @@ A `*.ini` file may be defined to configure the setup of the simulator and other 
 - https://docs.python.org/3/library/configparser.html (Though I dont use the Python built-in parser, since I use subsections and Python data-types in the config file)
 
 ## Changes
-- **Major changes to architecture of the simulator with a lot of new features. Will update  soon**
+- added MVEDQL class
+- obstacles are now defined as sub parts of an arena
+- configuration file can specify one or many arenas to be used, however it can be overridden by a command line argument `--arena`
+- changed epsilon greedy implementation to follow convention (high to low) insted of (low to high), though the meaning remains same.
+- A check agent connection method is introduced to raise error if mis-configured
+- NN architechture configurable in config file
+- Each agent now has its own destination and connection to arena configured into its object definition
+- Environment class can now configure multiple arenas defined by env_select
+- Environment now has a randomize method with selectable agent position and/or destination to valid points.
+- GUI can also initialize multiple arenas configured through env_select
+- GUI is scaled based on the areas defined automatically to fit all into space available
+- GUI resolution is now configurable
+- Currently mouse click changes destination of all agents to that point
+- Program argument `--env` can take in multiple arena names as comma seperated values to define a multi arena environment
+- Added a configuration `.ini` file to configure `everything`
+- a new folder is created inside the log directory specified in the config file each run, to avoid overwriting the previous saved weights and have a configuration log
+- Added basic Q learning class and DQN implementation class making it modular
+- Colorized cars, goals and obstacles
 - Corrected destination as terminal state
 - Added a parameter replay_start_at which decides when the learning starts even before completely filling up replay, hence allowing larger replay
 - Realized epsilon-greedy was with respect to exploration, however its inverted here.

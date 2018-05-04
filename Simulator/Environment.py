@@ -179,13 +179,18 @@ class Car():
         self.total_reward = 0
 
 class Environment():
-    def __init__(self,environment_details,env_select):
-        env_select = env_select.split(',')
-        if environment_details['path_creator']==True:
-            self.env_generator(environment_details,env_select[0])
+    def __init__(self,environment_details,arena_select):
+        arena_select = arena_select.split(',')
         self.arenas = []
-        for env in env_select:
-            pts = environment_details[env][:]
+        for arena in arena_select:
+            if not arena in environment_details['Arena']:
+                raise Exception('Seleted arena '+arena+' not defined in configuration')
+            if 'path_creator' in environment_details['Arena'][arena]:
+                if environment_details['Arena'][arena]['path_creator']==True:
+                    if not 'track_width' in environment_details['Arena'][arena]:
+                        raise Exception('Track width not specified in configuration')
+                    self.track_generator(environment_details['Arena'][arena],environment_details['Arena'][arena]['track_width'])
+            pts = environment_details['Arena'][arena]['points'][:]
             pts.append(pts[0])
             segs = []
             for i in range(1,len(pts)):
@@ -193,19 +198,22 @@ class Environment():
             points_np = np.array(pts)
             limits = (points_np[:,0].min(),points_np[:,0].max(),points_np[:,1].min(),points_np[:,1].max())
             max_delta = math.sqrt((limits[1]-limits[0])**2 + (limits[3]-limits[2])**2)
-            self.arenas.append({'segments':segs,'limits':limits,'max_delta':max_delta})
-        self.obs = []
-        if environment_details['no_obstacles']==False:
-            for obs in environment_details['Obstacle']:
-                pts = environment_details['Obstacle'][obs][:]
-                pts.append(pts[0])
-                segs = []
-                for i in range(1,len(pts)):
-                    segs.append(Vector(Point(pts[i-1]),Point(pts[i])))
-                self.obs.append(segs)
+            obs_segs = []
+            if 'obstacles' in environment_details['Arena'][arena]:
+                for obs in environment_details['Arena'][arena]['obstacles']:
+                    pts = obs[:]
+                    pts.append(pts[0])
+                    obs_segs.append([Vector(Point(pts[i-1]),Point(pts[i])) for i in range(1,len(pts))])
+            self.arenas.append({'segments':segs,'limits':limits,'max_delta':max_delta,'obstacle_segments':obs_segs})
         self.max_steps = environment_details['max_steps']
         self.destination_radius = environment_details['dest_radius']
         self.buffer_space = environment_details['buffer_space']
+
+    def check_agent_connections(self,*agents):
+        connections = range(len(self.arenas))
+        for i,agent in enumerate(agents):
+            if not (agent.connection in connections):
+                raise Exception('Please check car {0} connections to arenas in environment, in the configuration file'.format(i+1))
 
     def constrain(self,quantity,c_min,c_max):
         return min(max(quantity,c_min),c_max)
@@ -222,7 +230,7 @@ class Environment():
         R = np.array([[ct,-st],[st,ct]])
         return R
 
-    def find_range(self,pos,angle,length,segs):
+    def find_range(self,pos,angle,length,segs,obs_segs):
         R = self.rotation_matrix(angle)
         points = np.array([ [0,0],[length,0] ]).T
         points = np.dot(R,points)
@@ -234,7 +242,7 @@ class Environment():
             X = sensor.intersection(seg)
             if X is not None:
                 intersections.append(X)
-        for obs in self.obs:
+        for obs in obs_segs:
             for seg in obs:
                 X = sensor.intersection(seg)
                 if X is not None:
@@ -265,17 +273,18 @@ class Environment():
             x,y,omega = agent.get_state()
             car_pos = Point((x,y))
             segs = self.arenas[agent.connection]['segments']
+            obs_segs = self.arenas[agent.connection]['obstacle_segments']
             # Sensor update
             sensor_values = []
             for s in agent.detail['sensors']:
-                sensor_values.append(self.find_range(car_pos,omega+s['angle'],s['range'],segs))
+                sensor_values.append(self.find_range(car_pos,omega+s['angle'],s['range'],segs,obs_segs))
             agent.set_sensor_reading(sensor_values)
             # Calculate euclidian distance from destination
             agent.prev_score = agent.score
             agent.score = car_pos.distance(agent.destination)
             # Collision update
             inside_env = self.check_point_inside_polygon(car_pos,segs)
-            outside_obs = all([not self.check_point_inside_polygon(car_pos,obs) for obs in self.obs])
+            outside_obs = all([not self.check_point_inside_polygon(car_pos,obs) for obs in obs_segs])
             # Delta state
             delta = Vector(car_pos,agent.destination)
             s,c = self.encode_angle(delta.angle()-omega)
@@ -295,7 +304,7 @@ class Environment():
 
     def check_valid_point(self,pt,agent):
         if self.check_point_inside_polygon(pt,self.arenas[agent.connection]['segments'])==True:
-            if all([not self.check_point_inside_polygon(pt,obs) for obs in self.obs])==True:
+            if all([not self.check_point_inside_polygon(pt,obs) for obs in self.arenas[agent.connection]['obstacle_segments']])==True:
                 return True
         return False
 
@@ -328,9 +337,8 @@ class Environment():
                 rp = self.random_valid_position(agent)
                 agent.destination.x,agent.destination.y = rp.x,rp.y
 
-    def env_generator(self,env_dict,select):
-        path = env_dict[select][:]
-        d = env_dict['track_width']
+    def track_generator(self,env_dict,track_width):
+        path = env_dict['points'][:]
         start_angle = 0.0
         side_L,side_R = [],[]
         for i in range(len(path)):
@@ -338,17 +346,17 @@ class Environment():
             if i==0:
                 p3 = Point(path[i+1])
                 u = Vector(p3,p2).unit_vector()
-                p1 = u.vector*d + p2
+                p1 = u.vector*track_width + p2
                 start_angle = Vector(p2,p3).angle()
             elif i==(len(path)-1):
                 p1 = Point(path[i-1])
                 u = Vector(p1,p2).unit_vector()
-                p3 = u.vector*d + p2
+                p3 = u.vector*track_width + p2
             else:
                 p1 = Point(path[i-1])
                 p3 = Point(path[i+1])
             perp_unit_vec = Vector(p1,p3).perpendicular().unit_vector()
-            pl,pr = p2+perp_unit_vec.vector*d, p2-perp_unit_vec.vector*d
+            pl,pr = p2+perp_unit_vec.vector*track_width, p2-perp_unit_vec.vector*track_width
             side_L.append((pl.x,pl.y))
             side_R.append((pr.x,pr.y))
-        env_dict[select] = side_R + side_L[::-1]
+        env_dict['points'] = side_R + side_L[::-1]

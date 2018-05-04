@@ -33,8 +33,8 @@ def configurator(config_file):
             car[subkey] = config['Cars'][key][subkey]
         car['sensors'] = [car['sensors'][k] for k in car['sensors']]
         cars.append(car)
-    env_definition = dict(config['Arena'])
-    env_definition['Obstacle'] = dict(config['Obstacle'])
+    env_definition = dict(config['Environment'])
+    env_definition['Arena'] = dict(config['Arena'])
     # Make a new directory to log files
     rl_p['logdir'] = check_directory(rl_p['logdir'])
     # Save a copy of the config file in the log directory
@@ -43,9 +43,9 @@ def configurator(config_file):
 
 def parse_args():
     parser = argparse.ArgumentParser(description="RL-Car Project")
-    parser.add_argument("--control", help="user/multi/dqn",default='user')
-    parser.add_argument("--run_only", dest='run_only', action='store_true', help="epsilon=1,no_training")
+    parser.add_argument("--control", help="user/dqn",default='user')
+    parser.add_argument("--run_only", dest='run_only', action='store_true', help="epsilon=0,no_training")
     parser.add_argument("--load_weights", help="path to load saved weights")
-    parser.add_argument("--env", help="select environment from config. In case of multi arena use comma seperated, ex: --env BOX,H",default='BOX')
+    parser.add_argument("--arena", help="select arena from config. In case of multi arena use comma seperated, ex: --arena BOX,H")
     parser.add_argument("--config", help="path to config file",default='Configurations/config.ini')
     return parser.parse_args()

@@ -146,7 +146,7 @@ class DQN(QLearning_NN):
         else:
             epsilon = self.parameters['epsilon']
         r = random.random()
-        action = np.argmax(q_vals) if r<epsilon else np.random.random_integers(0,self.parameters['output_length']-1)
+        action = np.argmax(q_vals) if r>epsilon else np.random.random_integers(0,self.parameters['output_length']-1)
         v,s = self.parameters['actions'][action]
         agent.set_velocity(v)
         agent.set_steering(s)
@@ -175,42 +175,43 @@ class DQN(QLearning_NN):
     def check_terminal_state_and_log(self,agent,env,reward):
         self.itr += 1
         self.avg_loss = 0 if self.train_hist is None else (self.avg_loss+self.train_hist.history['loss'][0])
-        terminal_state,physical_state,debug_data = None,None,None
+        terminals,terminal_states,physical_states,debug_data = [],[],[],None
         agent.total_reward += reward
         if agent.physical_state=='collided' or agent.physical_state=='destination' or agent.physical_state=='timeup':
             agent.epoch += 1
+            terminal_states.append(agent.get_state())
+            physical_states.append(agent.physical_state)
+            terminals.append(0)
             self.log['total_reward'].append(agent.total_reward)
             self.log['state'].append(agent.physical_state)
-            #self.log['running_reward'].append(np.mean(self.log['total_reward'][-100:]))
             self.log['running_reward'].append(np.mean(self.log['total_reward']) if len(self.log['total_reward'])>10 else min(self.log['total_reward']))
             self.log['epoch'].append(agent.epoch)
             self.log['avg_loss'].append(self.avg_loss/self.itr)
-            if self.replay.minimum_buffer_filled()==True and self.parameters['epsilon']<self.parameters['max_epsilon']:
-                self.parameters['epsilon'] += self.parameters['epsilon_step']
+            if self.replay.minimum_buffer_filled()==True and self.parameters['epsilon']>self.parameters['min_epsilon']:
+                self.parameters['epsilon'] -= self.parameters['epsilon_step']
             self.avg_loss,self.itr = 0,0
             if agent.epoch%self.parameters['save_interval']==0:
                 self.model.save_weights(self.parameters['logdir']+'rlcar_epoch_'+str(agent.epoch).zfill(5))
                 print 'Epoch ',agent.epoch,'Epsilon=',self.parameters['epsilon'],'Run=',agent.physical_state,'Avg score=',self.log['running_reward'][-1],'Avg loss=',self.log['avg_loss'][-1]
                 debug_data = '[Training]\n'+'Epoch '+str(agent.epoch)+'\nEpsilon='+str(self.parameters['epsilon'])+'\nRun='+str(agent.physical_state)+'\nAvg score='+'{:.2f}'.format(self.log['running_reward'][-1])+'\nAvg loss='+str(self.log['avg_loss'][-1])
                 np.save(self.parameters['logdir']+'log_A'+str(0),self.log)
-            terminal_state = agent.get_state()
-            physical_state = agent.physical_state
             agent.reset()
             env.randomize(self.parameters['random_agent_position'],self.parameters['random_destination_position'],agent)
             env.compute_interaction(agent)
-        return terminal_state,physical_state,debug_data,self.log
+        return terminals,terminal_states,physical_states,debug_data,self.log
 
     def check_terminal_state(self,agent,env):
-        terminal_state,physical_state = None,None
+        terminals,terminal_states,physical_states = [],[],[]
         if agent.physical_state=='collided' or agent.physical_state=='destination' or agent.physical_state=='timeup':
-            terminal_state = agent.get_state()
-            physical_state = agent.physical_state
+            terminal_states.append(agent.get_state())
+            physical_states.append(agent.physical_state)
+            terminals.append(0)
             agent.reset()
             env.randomize(self.parameters['random_agent_position'],self.parameters['random_destination_position'],agent)
             env.compute_interaction(agent)
-        return terminal_state,physical_state
+        return terminals,terminal_states,physical_states
 
-    def learn_step(self,agent,env,dt):
+    def learn_step(self,env,dt,agent):
         dstate,action_taken = self.take_action(agent,dt)
         env.compute_interaction(agent)
         new_dstate = agent.get_partial_state()
@@ -220,6 +221,6 @@ class DQN(QLearning_NN):
         self.train_nn()
         return self.check_terminal_state_and_log(agent,env,reward)
 
-    def run_step(self,agent,env,dt):
-        self.take_action(agent,dt,epsilon_override=1.0)
+    def run_step(self,env,dt,agent):
+        self.take_action(agent,dt,epsilon_override=0.0)
         return self.check_terminal_state(agent,env)
