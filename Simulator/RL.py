@@ -53,19 +53,21 @@ class ReplayMemory():
 
 
 class QLearning_NN(object):
-    def __init__(self,rl_params,run_only,sample_state,load_weights=None):
+    def __init__(self,rl_params,testing,sample_state,load_weights=None):
         # Dont use all of my GPU memory
         keras.backend.tensorflow_backend.set_session(tf.Session(config=tf.ConfigProto(log_device_placement=False, gpu_options=tf.GPUOptions(allow_growth=True))))
         self.parameters = dict(rl_params)
         self.parameters['output_length'] = len(self.parameters['actions'])
-        self.parameters['state_dimension'] = len(sample_state)
+        self.parameters['state_dimension'] = len(sample_state)*self.parameters['agent_history_length']
+        self.state_buffer = None
+        self.parameters['actions'] = [(x/self.parameters['agent_history_length'],y) for x,y in self.parameters['actions']]
         # Neural Network
         self.generate_q_value_approximator()
         # Initialize parameters
         if self.parameters['random_seed'] is not None: self.random_seed(self.parameters['random_seed'])
         if load_weights is not None: self.load_weights(load_weights)
         # Replay Memory
-        self.replay = ReplayMemory(length=self.parameters['buffer_length'], state_length=self.parameters['state_dimension'], defined_terminal_states=[key for key in self.parameters['terminal_state_rewards']], minimum_buffer_length=self.parameters['replay_start_at']) if run_only==False else None
+        self.replay = ReplayMemory(length=self.parameters['buffer_length'], state_length=self.parameters['state_dimension'], defined_terminal_states=[key for key in self.parameters['terminal_state_rewards']], minimum_buffer_length=self.parameters['replay_start_at']) if testing==False else None
         # Local log
         self.itr,self.avg_loss,self.train_hist = 0,0,None
         self.epoch,self.total_reward,self.avg_score = 0,0,0
@@ -138,8 +140,8 @@ class DQN(QLearning_NN):
         self.model.load_weights(weights)
         self.model_target.load_weights(weights)
 
-    def take_action(self,agent,dt,epsilon_override=None):
-        dstate = agent.get_partial_state().reshape((1,-1))
+    def take_action(self,agent,env,dt,dstate,epsilon_override=None):
+        dstate = dstate.reshape((1,-1))
         q_vals = self.model.predict(dstate,batch_size=1,verbose=0)
         if epsilon_override is not None:
             epsilon = epsilon_override
@@ -150,8 +152,12 @@ class DQN(QLearning_NN):
         v,s = self.parameters['actions'][action]
         agent.set_velocity(v)
         agent.set_steering(s)
-        agent.update(dt)
-        return dstate,action
+        new_dstate = []
+        for i in range(self.parameters['agent_history_length']):
+            agent.update(dt)
+            env.compute_interaction(agent)
+            new_dstate += list(agent.get_partial_state())
+        return action,np.array(new_dstate)
 
     def train_nn(self):
         old_states,old_actions,rewards,new_states,car_state = self.replay.sample(self.parameters['minibatchsize'])
@@ -172,7 +178,7 @@ class DQN(QLearning_NN):
             self.copy_weights(self.model,self.model_target)
             self.target_update_counter = 0
 
-    def check_terminal_state_and_log(self,agent,env,reward):
+    def check_terminal_state_and_log(self,agent,env,reward,dt):
         self.itr += 1
         self.avg_loss = 0 if self.train_hist is None else (self.avg_loss+self.train_hist.history['loss'][0])
         terminals,terminal_states,physical_states,debug_data = [],[],[],None
@@ -198,29 +204,146 @@ class DQN(QLearning_NN):
             agent.reset()
             env.randomize(self.parameters['random_agent_position'],self.parameters['random_destination_position'],agent)
             env.compute_interaction(agent)
+            self.init_state_buffer(env,dt,agent)
         return terminals,terminal_states,physical_states,debug_data,self.log
 
-    def check_terminal_state(self,agent,env):
+    def check_terminal_state(self,agent,env,dt,reset):
         terminals,terminal_states,physical_states = [],[],[]
         if agent.physical_state=='collided' or agent.physical_state=='destination' or agent.physical_state=='timeup':
             terminal_states.append(agent.get_state())
             physical_states.append(agent.physical_state)
             terminals.append(0)
-            agent.reset()
-            env.randomize(self.parameters['random_agent_position'],self.parameters['random_destination_position'],agent)
-            env.compute_interaction(agent)
+            if reset==True:
+                agent.reset()
+                env.randomize(self.parameters['random_agent_position'],self.parameters['random_destination_position'],agent)
+                env.compute_interaction(agent)
+                self.init_state_buffer(env,dt,agent)
         return terminals,terminal_states,physical_states
 
+    def init_state_buffer(self,env,dt,agent):
+        action = np.random.random_integers(0,self.parameters['output_length']-1)
+        v,s = self.parameters['actions'][action]
+        agent.set_velocity(v)
+        agent.set_steering(s)
+        new_dstate = []
+        for i in range(self.parameters['agent_history_length']):
+            agent.update(dt)
+            env.compute_interaction(agent)
+            new_dstate += list(agent.get_partial_state())
+        self.state_buffer = np.array(new_dstate)
+
     def learn_step(self,env,dt,agent):
-        dstate,action_taken = self.take_action(agent,dt)
-        env.compute_interaction(agent)
-        new_dstate = agent.get_partial_state()
+        action_taken,new_dstate = self.take_action(agent,env,dt,self.state_buffer)
         reward = self.reward_function(agent)
         agent_physical_state = agent.physical_state
-        self.replay.add(dstate,action_taken,reward,new_dstate,agent_physical_state)
+        self.replay.add(self.state_buffer,action_taken,reward,new_dstate,agent_physical_state)
+        self.state_buffer = new_dstate[:]
         self.train_nn()
-        return self.check_terminal_state_and_log(agent,env,reward)
+        return self.check_terminal_state_and_log(agent,env,reward,dt)
 
-    def run_step(self,env,dt,agent):
-        self.take_action(agent,dt,epsilon_override=0.0)
-        return self.check_terminal_state(agent,env)
+    def run_step(self,env,dt,agent,reset=True):
+        _,new_dstate = self.take_action(agent,env,dt,self.state_buffer,epsilon_override=0.0)
+        self.state_buffer = new_dstate[:]
+        return self.check_terminal_state(agent,env,dt,reset=reset)
+
+# With history
+class MVEDQL(QLearning_NN):
+    def generate_q_value_approximator(self):
+        self.generate_nn()
+
+    def load_weights(self,weights):
+        self.model.load_weights(weights)
+
+    def take_action(self,env,dt,dstate,epsilon_override,*agents):
+        q_vals = self.model.predict(dstate,batch_size=1,verbose=0)
+        if epsilon_override is not None:
+            epsilon = [epsilon_override]*len(agents)
+        else:
+            epsilon = [self.parameters['epsilon']]*len(agents)
+        r = random.random()
+        action = [np.argmax(q_vals[i]) if r>epsilon[i] else np.random.random_integers(0,self.parameters['output_length']-1) for i in range(len(agents))]
+        for i in range(len(agents)):
+            v,s = self.parameters['actions'][action[i]]
+            agents[i].set_velocity(v)
+            agents[i].set_steering(s)
+        new_dstate = []
+        for j in range(self.parameters['agent_history_length']):
+            for i in range(len(agents)): agents[i].update(dt)
+            env.compute_interaction(*agents)
+            new_dstate.append(np.array([agent.get_partial_state() for agent in agents]))
+        return action,np.concatenate(new_dstate,axis=1)
+
+    def check_terminal_state_and_log(self,env,reward,dt,*agents):
+        self.itr += 1
+        self.avg_loss = 0 if self.train_hist is None else (self.avg_loss+self.train_hist.history['loss'][0])
+        terminals,terminal_states,physical_states,debug_data = [],[],[],None
+        for i,agent in enumerate(agents):
+            agent.total_reward += reward[i]
+            if agent.physical_state=='collided' or agent.physical_state=='destination' or agent.physical_state=='timeup':
+                agent.epoch += 1
+                terminal_states.append(agent.get_state())
+                physical_states.append(agent.physical_state)
+                terminals.append(i)
+                if i==0:
+                    self.log['total_reward'].append(agent.total_reward)
+                    self.log['state'].append(agent.physical_state)
+                    self.log['running_reward'].append(np.mean(self.log['total_reward']) if len(self.log['total_reward'])>10 else min(self.log['total_reward']))
+                    self.log['epoch'].append(agent.epoch)
+                    self.log['avg_loss'].append(self.avg_loss/self.itr)
+                    if self.replay.minimum_buffer_filled()==True and self.parameters['epsilon']>self.parameters['min_epsilon']:
+                        self.parameters['epsilon'] -= self.parameters['epsilon_step']
+                    self.avg_loss,self.itr = 0,0
+                    if agent.epoch%self.parameters['save_interval']==0:
+                        self.model.save_weights(self.parameters['logdir']+'rlcar_epoch_'+str(agent.epoch).zfill(5))
+                        print 'Epoch ',agent.epoch,'Epsilon=',self.parameters['epsilon'],'Run=',agent.physical_state,'Avg score=',self.log['running_reward'][-1],'Avg loss=',self.log['avg_loss'][-1]
+                        debug_data = '[Training]\n'+'Epoch '+str(agent.epoch)+'\nEpsilon='+str(self.parameters['epsilon'])+'\nRun='+str(agent.physical_state)+'\nAvg score='+'{:.2f}'.format(self.log['running_reward'][-1])+'\nAvg loss='+str(self.log['avg_loss'][-1])
+                        np.save(self.parameters['logdir']+'log_A'+str(0),self.log)
+                agent.reset()
+                env.randomize(self.parameters['random_agent_position'],self.parameters['random_destination_position'],agent)
+                env.compute_interaction(agent)
+                self.init_state_buffer(env,dt,i,agent)
+        return terminals,terminal_states,physical_states,debug_data,self.log
+
+    def check_terminal_state(self,env,dt,reset,*agents):
+        terminals,terminal_states,physical_states = [],[],[]
+        for i,agent in enumerate(agents):
+            if agent.physical_state=='collided' or agent.physical_state=='destination' or agent.physical_state=='timeup':
+                terminal_states.append(agent.get_state())
+                physical_states.append(agent.physical_state)
+                terminals.append(i)
+                if reset==True:
+                    agent.reset()
+                    env.randomize(self.parameters['random_agent_position'],self.parameters['random_destination_position'],agent)
+                    env.compute_interaction(agent)
+                    self.init_state_buffer(env,dt,i,agent)
+        return terminals,terminal_states,physical_states
+
+    def init_state_buffer(self,env,dt,idx=None,*agents):
+        action = [np.random.random_integers(0,self.parameters['output_length']-1) for i in range(len(agents))]
+        for i in range(len(agents)):
+            v,s = self.parameters['actions'][action[i]]
+            agents[i].set_velocity(v)
+            agents[i].set_steering(s)
+        new_dstate = []
+        for j in range(self.parameters['agent_history_length']):
+            for i in range(len(agents)): agents[i].update(dt)
+            env.compute_interaction(*agents)
+            new_dstate.append(np.array([agent.get_partial_state() for agent in agents]))
+        if idx is not None:
+            self.state_buffer[idx] = np.concatenate(new_dstate,axis=1)[0]
+        else:
+            self.state_buffer = np.concatenate(new_dstate,axis=1)
+
+    def learn_step(self,env,dt,*agents):
+        action_taken,new_dstate = self.take_action(env,dt,self.state_buffer,None,*agents)
+        reward = [self.reward_function(agent) for agent in agents]
+        agent_physical_state = [agent.physical_state for agent in agents]
+        for i in range(len(agents)): self.replay.add(self.state_buffer[i],action_taken[i],reward[i],new_dstate[i],agent_physical_state[i])
+        self.state_buffer = new_dstate[:]
+        self.train_nn()
+        return self.check_terminal_state_and_log(env,reward,dt,*agents)
+
+    def run_step(self,env,dt,reset=True,*agents):
+        _,new_dstate = self.take_action(env,dt,self.state_buffer,0.0,*agents)
+        self.state_buffer = new_dstate[:]
+        return self.check_terminal_state(env,dt,reset,*agents)

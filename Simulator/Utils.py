@@ -43,8 +43,9 @@ def configurator(config_file):
 
 def parse_args():
     parser = argparse.ArgumentParser(description="RL-Car Project")
-    parser.add_argument("--control", help="user/dqn",default='user')
-    parser.add_argument("--run_only", dest='run_only', action='store_true', help="epsilon=0,no_training")
+    parser.add_argument("--control", help="user/dqn/mvedql/checkpoint",default='user')
+    parser.add_argument("--test", dest='test', action='store_true', help="epsilon=0,no_training")
+    parser.add_argument("--cts", dest='cts', action='store_true', help="incremental continuous control input")
     parser.add_argument("--load_weights", help="path to load saved weights")
     parser.add_argument("--arena", help="select arena from config. In case of multi arena use comma seperated, ex: --arena BOX,H")
     parser.add_argument("--config", help="path to config file",default='Configurations/config.ini')

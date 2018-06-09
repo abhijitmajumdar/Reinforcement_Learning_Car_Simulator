@@ -1,6 +1,8 @@
 # Reinforcement Learning Car Simulator
 A multi agent multi arena car simulator oriented towards Reinforcement Learning. Provides functionality of defining multiples similar or different cars(agents) in single or multiple arenas(environment), with each car having sensing capability with the use of obstacle detector similar to a laser range-finder. Simulator is capable of running multiple instances simultaneously while logging all data separately. Example with the use of Deep Q Learning (DQN) is provided for single agent in different arenas.
 
+Watch the video to get an idea of the simulator: https://youtu.be/rW5y1mpuV0c
+
 Example of learning an arena using DQN:
 ![Learning](/Images/rlcarsim_demo3.gif?raw=true "Learning")
 <br/><br/><br/><br/>
@@ -36,36 +38,43 @@ $ python rlcarsim.py --control dqn
 #### Other examples:
 Almost every setting can be configured using a configuration file. Sample configuration files are provided in the `Configurations` folder representing different settings the simulator can be used for.
 
-Run with predefined velocities and steering, with user controlling all cars(w/a/s/d), with single or multiple cars:
+Typical usage of command line arguments
 ```sh
-$ python rlcarsim.py --control user --config Configurations/config_singleagent.ini --arena BOX
-$ python rlcarsim.py --control user --config Configurations/config_multiagent.ini --arena ROOM
-$ python rlcarsim.py --control user --config Configurations/config_singleagent.ini --arena SHAPE
-$ python rlcarsim.py --control user --config Configurations/config_multiagent.ini --arena H
-$ python rlcarsim.py --control user --config Configurations/config_multiagent.ini --arena CIRCLE
+$ python rlcarsim.py \
+--control dqn \
+--config Configurations/config.ini \
+--arena BOX,H \
+--load_weights weights/91/rlcar_epoch_05060 \
+--test
 ```
 
-Run with user control, on multiple cars and multiple arenas:
+Run with predefined velocities and steering, with user controlling all cars(w/a/s/d), with discrete or continuous control:
 ```sh
-$ python rlcarsim.py --control user --config Configurations/config_multiagent_multiarena.ini --arena BOX,H
-$ python rlcarsim.py --control user --config Configurations/config_multiagent_multiarena.ini --arena BOX,H,CIRCLE
-$ python rlcarsim.py --control user --config Configurations/config_multiagent_multiarena.ini --arena BOX,CIRCLE
+$ python rlcarsim.py --control user --config Configurations/config.ini --arena BOX
+$ python rlcarsim.py --control user --config Configurations/config.ini --arena BOX --cts
 ```
 
-Train a model using DQN in the BOX environment with an obstacle (The training and validation can be switched in the GUI as well, as described later):
+Different sensor configuration:
 ```sh
-$ python rlcarsim.py --control dqn --config Configurations/config_singleagent.ini --arena BOX
-```
-Test the model in a different(BIGBOX) environment with an obstacle by loading weights *rlcar_epoch_00600* in run 5(folder inside weights directory):
-```sh
-$ python rlcarsim.py --control dqn --config Configurations/config_singleagent.ini --arena BIGBOX --run_only --load_weights weights/5/rlcar_epoch_00600
+$ python rlcarsim.py --control user --config Configurations/config_widesensors.ini
 ```
 
-Train a model using DQN in the TRACK(which uses path creator to convert path points into polygon points, enabled in the config file) environment without obstacles:
+Multiple arena example:
 ```sh
-$ python rlcarsim.py --control dqn --config Configurations/config_track.ini --arena TRACK
+$ python rlcarsim.py --control user --config Configurations/config_multiagent_multiarena.ini
 ```
 
+Training DQN:
+```sh
+$ python rlcarsim.py --control dqn --config Configurations/config.ini
+$ python rlcarsim.py --control dqn --config Configurations/config_track.ini
+```
+
+Training MVEDQL:
+```sh
+$ python rlcarsim.py --control mvedql --config Configurations/config.ini
+$ python rlcarsim.py --control mvedql --config Configurations/config_multiagent_multiarena.ini
+```
 
 ## Working
 The goal was to create a customized environment, where a car like object can be trained to maneuver and reach its destination while avoiding obstacles with the help of sensors on the car. A simulator is built with a Graphical User Interface (GUI) which shows the track and the car like objects along with obstacles. The project contains four modules in the Simulator folder `Environment.py`, `RL.py`, `GUI.py` and `Utils.py` which define different classes and methods used by the main file `rlcarsim.py`. This file gives example usage of each module and can be customized as per the application.
@@ -95,7 +104,7 @@ This module defines classes as examples to be used for RL applications. *ReplayM
 The action-value neural network approximator can be defined by specifying the number of neurons in each hidden layer and the activation function in the configuration file under the tag *[Network]*. Similarly, the RL parameters used like *epsilon* used in the *epsilon-gredy* policy, *gamma* as the discount factor, *alpha* as the learning rate and *C* as the *target network update frequency*, might all be defined in the configuration file as well under the tag *[Reinforcement Parameters]*. The permissible actions are also defined here under the tag *[Actions]*. A *log directory* is used to specify the directory under which all log files are stored, including training checkpoints(weights), configuration file used for the run and a log file containing details of all statistics for the run. A separate directory under the specified log directory is created for each run, to ensure no overwriting is performed, and all runs are logged, which can be used to compare later.
 
 The algorithms, methods and parameters used are largely influenced by the following:
-- Human-level control through deep reinforcement learning. https://www.nature.com/articles/nature14236 (With the difference in interpreting epsilon value\*)
+- Human-level control through deep reinforcement learning. https://www.nature.com/articles/nature14236 (~~With the difference in interpreting epsilon value~~\*)
 - Reinforcement Learning course by David Silver. http://www0.cs.ucl.ac.uk/staff/d.silver/web/Teaching.html
 - https://github.com/harvitronix/reinforcement-learning-car
 
@@ -110,9 +119,20 @@ A `*.ini` file may be defined to configure the setup of the simulator and other 
 - https://docs.python.org/3/library/configparser.html (Though I dont use the Python built-in parser, since I use subsections and Python data-types in the config file)
 
 ## Changes
+- added history to states, meaning agent transitions can be used as states, instead of one constant state, agent_history_length of 1 is normal
+- correspondingly added initialize state method and modified other methods to take actions
+- methods to create markers and labels and sleep
+- added input from the user using keyboard in the gui
+- fixed destination change in gui, which did not update when one of x/y was changed
+- added box collision model, with optional inter-agent collisions
+- added method to change destination to enable the checkpoint run
+- added a continuous control to user, hence also added increment velocity and steering, which might be later used by the algorithm
+- added a reset argument to the run_step, which might be later moved into a separate function in itself(reset)
+- changed all run_only occourances to test/testing/learn/learning, including the command line arguments
+- changed the traces from lines to arrows, indicating the direction of travel
 - added MVEDQL class
 - obstacles are now defined as sub parts of an arena
-- configuration file can specify one or many arenas to be used, however it can be overridden by a command line argument `--arena`
+- configuration file can specify one or many arenas to be used, however it can be overridden by a command line argument *--arena*
 - changed epsilon greedy implementation to follow convention (high to low) insted of (low to high), though the meaning remains same.
 - A check agent connection method is introduced to raise error if mis-configured
 - NN architechture configurable in config file
@@ -123,11 +143,11 @@ A `*.ini` file may be defined to configure the setup of the simulator and other 
 - GUI is scaled based on the areas defined automatically to fit all into space available
 - GUI resolution is now configurable
 - Currently mouse click changes destination of all agents to that point
-- Program argument `--env` can take in multiple arena names as comma seperated values to define a multi arena environment
-- Added a configuration `.ini` file to configure `everything`
+- Program argument *--env* can take in multiple arena names as comma seperated values to define a multi arena environment
+- Added a configuration *.ini* file to configure *everything*
 - a new folder is created inside the log directory specified in the config file each run, to avoid overwriting the previous saved weights and have a configuration log
 - Added basic Q learning class and DQN implementation class making it modular
-- Colorized cars, goals and obstacles
+- Colorized cars, goals and obstacles, traces, and added arrows to traces(arrow later can be added to configuration)
 - Corrected destination as terminal state
 - Added a parameter replay_start_at which decides when the learning starts even before completely filling up replay, hence allowing larger replay
 - Realized epsilon-greedy was with respect to exploration, however its inverted here.

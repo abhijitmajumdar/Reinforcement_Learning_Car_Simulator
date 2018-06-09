@@ -2,13 +2,14 @@ import Tkinter as tk
 import numpy as np
 import math
 import time
+import os
 
 class GUI(object):
     def __init__(self,environment_details,arena_select,car_details,graphs,trace=False):
         self.env = environment_details
         self.w,self.h = self.env['display_resolution']
         self.graphs = graphs
-        self.runs = ['Learn','Run only']
+        self.runs = ['Learn','Test']
         self.COLORS = ['RoyalBlue2','SlateGray2','dark khaki','DarkOrange1','turquoise1','indian red','MediumPurple1','lemon chiffon','PaleVioletRed1','gold','PaleGreen1','salmon2'] if environment_details['color_coding']==True else ['blue']*12
         self.construct_window()
         self.title_label('Reinforcement Learning Car Simulation')
@@ -20,7 +21,12 @@ class GUI(object):
         self.init_graph()
         self.approximator = lambda x: str(round(x, -int(math.floor(math.log10(abs(x))))+3)) if x!=0 else '0'
         self.refresh()
+        # Mouse and Keypress event
         self.mouse_click_loaction = [None,None]
+        self.key_pressed = None
+        os.system('xset r on') # Repeat interrupt when kept pressed
+        # GUI constants
+        self.use_arrow = True
 
     def construct_window(self):
         # Level 1: Main window and frame
@@ -32,6 +38,8 @@ class GUI(object):
         proportion = 0.7
         self.display = tk.Canvas(self.window_frame, width=int(proportion*self.w), height=self.h)
         self.display.bind("<Button-1>", self.mouse_click) #Misc
+        self.display.bind("<Key>", self.keypress)
+        self.display.focus_set()
         self.display.pack(side=tk.LEFT)
         self.display.config(background='gray90')
         self.options = tk.Frame(self.window_frame,padx=25,pady=25)
@@ -88,12 +96,12 @@ class GUI(object):
                 center = [agent.destination.x,agent.destination.y]
                 dest_pts = [(center[0]-radius,center[1]-radius),(center[0]+radius,center[1]+radius)]
                 dest_pts = self.scale_and_offset_center(dest_pts)
-                dest_id = self.display.create_oval(dest_pts,fill=self.COLORS[idx%12])
+                dest_id = self.display.create_oval(dest_pts,outline=self.COLORS[idx%12],width=10)
                 self.destination.append(center+[dest_id])
         else:
             for idx,agent in enumerate(agents):
                 center = [agent.destination.x,agent.destination.y]
-                if self.destination[idx][0]==center[0]:
+                if self.destination[idx][0]==center[0] and self.destination[idx][1]==center[1]:
                     continue
                 dest_pts = [(center[0]-radius,center[1]-radius),(center[0]+radius,center[1]+radius)]
                 dest_pts = self.scale_and_offset_center(dest_pts)
@@ -159,7 +167,10 @@ class GUI(object):
         if len(self.cars[car_id]['trace_history_buffer'])>100 or force_end_line==True:
             self.display.delete(self.cars[car_id]['trace_history'][self.cars[car_id]['trace_history_index']])
             if len(self.cars[car_id]['trace_history_buffer'])>2:
-                self.cars[car_id]['trace_history'][self.cars[car_id]['trace_history_index']] = self.display.create_line(self.scale_and_offset_center(self.cars[car_id]['trace_history_buffer']),fill='gray65',width=1)
+                if self.use_arrow==True:
+                    self.cars[car_id]['trace_history'][self.cars[car_id]['trace_history_index']] = self.display.create_line(self.scale_and_offset_center(self.cars[car_id]['trace_history_buffer']),fill=self.COLORS[car_id%12],width=1.5,arrow=tk.LAST,arrowshape=(8,10,6))
+                else:
+                    self.cars[car_id]['trace_history'][self.cars[car_id]['trace_history_index']] = self.display.create_line(self.scale_and_offset_center(self.cars[car_id]['trace_history_buffer']),fill=self.COLORS[car_id%12],width=1.0)
                 self.cars[car_id]['trace_history_index'] += 1
                 if self.cars[car_id]['trace_history_index'] >= self.trace_history_limit: self.cars[car_id]['trace_history_index'] = 0
             self.cars[car_id]['trace_history_buffer'] = []
@@ -239,3 +250,38 @@ class GUI(object):
 
     def mouse_click(self,event):
         self.mouse_click_loaction = self.inverse_scale_and_offset_center([[event.x,event.y]])[0]
+
+    def keypress(self,event):
+        self.key_pressed = event.char
+
+    def get_userinput(self):
+        uk = str(self.key_pressed) if self.key_pressed is not None else None
+        self.key_pressed = None
+        return uk
+
+    def create_marker(self,pos,style,l=0.1,angle=None):
+        if style=='o':
+            dest_pts = [(pos[0]-l,pos[1]-l),(pos[0]+l,pos[1]+l)]
+            dest_pts = self.scale_and_offset_center(dest_pts)
+            dest_id = self.display.create_oval(dest_pts,fill='red')
+        elif style=='x':
+            points = [ [-l+pos[0],-l+pos[1]], [l+pos[0],l+pos[1]] ]
+            self.display.create_line(self.scale_and_offset_center(points),fill='green',width=2.5)
+            points = [ [-l+pos[0],l+pos[1]], [l+pos[0],-l+pos[1]] ]
+            self.display.create_line(self.scale_and_offset_center(points),fill='green',width=2.5)
+        elif style=='arrow':
+            R = self.rotation_matrix(angle)
+            points = np.array([ [0,0], [l,0] ]).T
+            points = np.dot(R,points)
+            points[0,:] += pos[0]
+            points[1,:] += pos[1]
+            self.display.create_line(self.scale_and_offset_center(points.T),fill='red',width=4,arrow=tk.LAST,arrowshape=(8,12,5))
+
+    def create_label(self,pos,text):
+        pos = list(pos)
+        pos[1] += -0.2
+        pos[0] += 0.3
+        self.display.create_text(self.scale_and_offset_center([pos]),text=text,justify=tk.CENTER,font=('System'),fill='green')
+
+    def sleep(self,seconds):
+        time.sleep(seconds)

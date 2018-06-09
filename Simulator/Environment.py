@@ -136,13 +136,19 @@ class Car():
         self.omega = self.wrap_angle(self.omega)
 
     def set_steering(self,angle):
-        self.psi = self.constrain(angle,-self.detail['gamma_limit'],self.detail['gamma_limit'])
+        self.psi = self.constrain(angle,-self.detail['steering_limit'],self.detail['steering_limit'])
+
+    def increment_steering(self,dangle):
+        self.psi = self.constrain(self.psi+dangle,-self.detail['steering_limit'],self.detail['steering_limit'])
 
     def get_steering(self):
         return self.psi
 
     def set_velocity(self,velocity):
-        self.v = self.constrain(velocity,-self.detail['v_limit'],self.detail['v_limit'])
+        self.v = self.constrain(velocity,-self.detail['velocity_limit'],self.detail['velocity_limit'])
+
+    def increment_velocity(self,dvelocity):
+        self.v = self.constrain(self.v+dvelocity,-self.detail['velocity_limit'],self.detail['velocity_limit'])
 
     def get_velocity(self):
         return self.v
@@ -164,6 +170,9 @@ class Car():
 
     def random_state(self,mean,variance,angle_variance):
         self.set_state([mean[0]+random.uniform(-variance,variance), mean[1]+random.uniform(-variance,variance), mean[2]+random.uniform(-angle_variance,angle_variance)])
+
+    def set_destination(self,pt):
+        self.destination.x,self.destination.y = pt
 
     def reset(self):
         self.psi = 0 # Steering angle
@@ -208,6 +217,10 @@ class Environment():
         self.max_steps = environment_details['max_steps']
         self.destination_radius = environment_details['dest_radius']
         self.buffer_space = environment_details['buffer_space']
+        self.box_collision_model = environment_details['box_collision_model']
+        self.inter_agent_collision = environment_details['inter_agent_collision']
+        if self.inter_agent_collision==True and self.box_collision_model==False:
+            raise Exception('To enable inter agent collision, also enable box collision model')
 
     def check_agent_connections(self,*agents):
         connections = range(len(self.arenas))
@@ -268,23 +281,62 @@ class Environment():
         inside = len([i for i in intercepts if i is None])%2 != 0
         return inside
 
+    def compute_agent_boxmodel(self,agent,state):
+        R = self.rotation_matrix(state[1])
+        w = agent.detail['W']
+        l = agent.detail['L']
+        points = np.array([ [0,-w], [l,-w], [l,w], [0,w] ]).T
+        points = np.dot(R,points)
+        points[0,:] += state[0].x
+        points[1,:] += state[0].y
+        points = list(points.T)
+        points.append(points[0])
+        segs = [Vector(Point(points[i-1]),Point(points[i])) for i in range(1,len(points))]
+        return segs
+
+    def box_collision(self,agent_pos,agent_segs,arena_segs,obs_segs):
+        if not self.check_point_inside_polygon(agent_pos,arena_segs):
+            return True
+        for agent_seg in agent_segs:
+            for seg in arena_segs:
+                if agent_seg.intersection(seg) is not None:
+                    return True
+            for obs_seg in obs_segs:
+                for seg in obs_seg:
+                    if agent_seg.intersection(seg) is not None:
+                        return True
+        return False
+
+    def point_collision(self,agent_pos,arena_segs,obs_segs):
+        inside_arena = self.check_point_inside_polygon(agent_pos,arena_segs)
+        outside_obs = all([not self.check_point_inside_polygon(agent_pos,obs) for obs in obs_segs])
+        if (not inside_arena) or (not outside_obs):
+            return True
+        return False
+
     def compute_interaction(self,*agents):
-        for agent in agents:
-            x,y,omega = agent.get_state()
-            car_pos = Point((x,y))
-            segs = self.arenas[agent.connection]['segments']
-            obs_segs = self.arenas[agent.connection]['obstacle_segments']
+        all_car_states = [(Point((agent.x,agent.y)),agent.omega) for agent in agents]
+        if self.box_collision_model==True:
+            all_car_segs = [self.compute_agent_boxmodel(agent,state) for agent,state in zip(agents,all_car_states)]
+        for i,agent in enumerate(agents):
+            car_pos,omega = all_car_states[i]
+            arena_segs = self.arenas[agent.connection]['segments']
+            obs_segs = self.arenas[agent.connection]['obstacle_segments'][:]
+            if self.box_collision_model==True:
+                other_car_segs = all_car_segs[:]
+                car_segs = other_car_segs.pop(i)
+                if self.inter_agent_collision==True:
+                    obs_segs += other_car_segs
             # Sensor update
             sensor_values = []
             for s in agent.detail['sensors']:
-                sensor_values.append(self.find_range(car_pos,omega+s['angle'],s['range'],segs,obs_segs))
+                sensor_values.append(self.find_range(car_pos,omega+s['angle'],s['range'],arena_segs,obs_segs))
             agent.set_sensor_reading(sensor_values)
             # Calculate euclidian distance from destination
             agent.prev_score = agent.score
             agent.score = car_pos.distance(agent.destination)
             # Collision update
-            inside_env = self.check_point_inside_polygon(car_pos,segs)
-            outside_obs = all([not self.check_point_inside_polygon(car_pos,obs) for obs in obs_segs])
+            collided = self.box_collision(car_pos,car_segs,arena_segs,obs_segs) if self.box_collision_model==True else self.point_collision(car_pos,arena_segs,obs_segs)
             # Delta state
             delta = Vector(car_pos,agent.destination)
             s,c = self.encode_angle(delta.angle()-omega)
@@ -292,11 +344,11 @@ class Environment():
             #agent.phi = np.concatenate(([dist,s,c],self.scale(np.array(sensor_values),0,agent.detail['sensors']['S1']['range'],1,0)))
             agent.phi = np.concatenate(([dist,s,c],self.scale(np.array(sensor_values),0,2,1,0)))
             # Update agent condition
-            if (not inside_env) or (not outside_obs): agent.physical_state = 'collided'
-            # Timing
-            elif agent.steps > self.max_steps: agent.physical_state = 'timeup'
+            if collided==True: agent.physical_state = 'collided'
             # Check destination reached
             elif agent.score<self.destination_radius: agent.physical_state = 'destination'
+            # Timing
+            elif agent.steps > self.max_steps: agent.physical_state = 'timeup'
             if agent.physical_state=='running': agent.steps += 1
 
     def set_max_steps(self,value):
