@@ -140,7 +140,7 @@ class DQN(QLearning_NN):
         self.model.load_weights(weights)
         self.model_target.load_weights(weights)
 
-    def take_action(self,agent,env,dt,dstate,epsilon_override=None):
+    def find_best_action(self,dstate,epsilon_override=None):
         dstate = dstate.reshape((1,-1))
         q_vals = self.model.predict(dstate,batch_size=1,verbose=0)
         if epsilon_override is not None:
@@ -149,6 +149,9 @@ class DQN(QLearning_NN):
             epsilon = self.parameters['epsilon']
         r = random.random()
         action = np.argmax(q_vals) if r>epsilon else np.random.random_integers(0,self.parameters['output_length']-1)
+        return action
+
+    def execute_action(self,action,agent,env,dt):
         v,s = self.parameters['actions'][action]
         agent.set_velocity(v)
         agent.set_steering(s)
@@ -157,7 +160,7 @@ class DQN(QLearning_NN):
             agent.update(dt)
             env.compute_interaction(agent)
             new_dstate += list(agent.get_partial_state())
-        return action,np.array(new_dstate)
+        return np.array(new_dstate)
 
     def train_nn(self):
         old_states,old_actions,rewards,new_states,car_state = self.replay.sample(self.parameters['minibatchsize'])
@@ -233,7 +236,8 @@ class DQN(QLearning_NN):
         self.state_buffer = np.array(new_dstate)
 
     def learn_step(self,env,dt,agent):
-        action_taken,new_dstate = self.take_action(agent,env,dt,self.state_buffer)
+        action_taken = self.find_best_action(self.state_buffer)
+        new_dstate = self.execute_action(action_taken,agent,env,dt)
         reward = self.reward_function(agent)
         agent_physical_state = agent.physical_state
         self.replay.add(self.state_buffer,action_taken,reward,new_dstate,agent_physical_state)
@@ -242,7 +246,8 @@ class DQN(QLearning_NN):
         return self.check_terminal_state_and_log(agent,env,reward,dt)
 
     def run_step(self,env,dt,agent,reset=True):
-        _,new_dstate = self.take_action(agent,env,dt,self.state_buffer,epsilon_override=0.0)
+        action_taken = self.find_best_action(self.state_buffer,epsilon_override=0.0)
+        new_dstate = self.execute_action(action_taken,agent,env,dt)
         self.state_buffer = new_dstate[:]
         return self.check_terminal_state(agent,env,dt,reset=reset)
 
@@ -254,14 +259,18 @@ class MVEDQL(QLearning_NN):
     def load_weights(self,weights):
         self.model.load_weights(weights)
 
-    def take_action(self,env,dt,dstate,epsilon_override,*agents):
+    def find_best_action(self,dstate,epsilon_override=None):
+        n = dstate.shape[0]
         q_vals = self.model.predict(dstate,batch_size=1,verbose=0)
         if epsilon_override is not None:
-            epsilon = [epsilon_override]*len(agents)
+            epsilon = [epsilon_override]*n
         else:
-            epsilon = [self.parameters['epsilon']]*len(agents)
+            epsilon = [self.parameters['epsilon']]*n
         r = random.random()
-        action = [np.argmax(q_vals[i]) if r>epsilon[i] else np.random.random_integers(0,self.parameters['output_length']-1) for i in range(len(agents))]
+        action = [np.argmax(q_vals[i]) if r>epsilon[i] else np.random.random_integers(0,self.parameters['output_length']-1) for i in range(n)]
+        return action
+
+    def execute_action(self,action,env,dt,*agents):
         for i in range(len(agents)):
             v,s = self.parameters['actions'][action[i]]
             agents[i].set_velocity(v)
@@ -271,7 +280,7 @@ class MVEDQL(QLearning_NN):
             for i in range(len(agents)): agents[i].update(dt)
             env.compute_interaction(*agents)
             new_dstate.append(np.array([agent.get_partial_state() for agent in agents]))
-        return action,np.concatenate(new_dstate,axis=1)
+        return np.concatenate(new_dstate,axis=1)
 
     def check_terminal_state_and_log(self,env,reward,dt,*agents):
         self.itr += 1
@@ -335,7 +344,8 @@ class MVEDQL(QLearning_NN):
             self.state_buffer = np.concatenate(new_dstate,axis=1)
 
     def learn_step(self,env,dt,*agents):
-        action_taken,new_dstate = self.take_action(env,dt,self.state_buffer,None,*agents)
+        action_taken = self.find_best_action(self.state_buffer)
+        new_dstate = self.execute_action(action_taken,env,dt,*agents)
         reward = [self.reward_function(agent) for agent in agents]
         agent_physical_state = [agent.physical_state for agent in agents]
         for i in range(len(agents)): self.replay.add(self.state_buffer[i],action_taken[i],reward[i],new_dstate[i],agent_physical_state[i])
@@ -344,6 +354,7 @@ class MVEDQL(QLearning_NN):
         return self.check_terminal_state_and_log(env,reward,dt,*agents)
 
     def run_step(self,env,dt,reset=True,*agents):
-        _,new_dstate = self.take_action(env,dt,self.state_buffer,0.0,*agents)
+        action_taken = self.find_best_action(self.state_buffer,epsilon_override=0.0)
+        new_dstate = self.execute_action(action_taken,env,dt,*agents)
         self.state_buffer = new_dstate[:]
         return self.check_terminal_state(env,dt,reset,*agents)
