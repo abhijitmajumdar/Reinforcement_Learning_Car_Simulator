@@ -1,6 +1,7 @@
 <launch>
   <arg name="config" default="$(find rlcarsim)/Configurations/config.ini" />
   <arg name="logdir" default="$(find rlcarsim)/weights/" />
+  <arg name="load_weights" default="" />
   <arg name="pose" default="/pose" />
   <arg name="tof" default="/tof" />
   <arg name="cmd" default="/cmd" />
@@ -8,6 +9,7 @@
   <node name="rlcar" pkg="rlcarsim" type="rlcarsim_ros.py" required="true">
     <param name="config" value="$(arg config)" />
     <param name="logdir" value="$(arg logdir)" />
+    <param name="load_weights" value="$(arg load_weights)" unless="$(eval load_weights=='')"/>
     <remap from="pose" to="$(arg pose)" />
     <remap from="tof" to="$(arg tof)" />
     <remap from="cmd" to="$(arg cmd)" />

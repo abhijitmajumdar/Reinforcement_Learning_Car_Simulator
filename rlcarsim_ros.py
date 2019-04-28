@@ -16,7 +16,12 @@ class RLCAR:
         self.sense_subscriber.registerCallback(self.sense_callback)
         self.motor_publisher = rospy.Publisher('cmd', Int16MultiArray, queue_size=1)
         config_file = rospy.get_param('~config')
+        rospy.loginfo('Configuration file:%s',config_file)
         logdir = rospy.get_param('~logdir')
+        rospy.loginfo('Weights and logs saved in:%s',logdir)
+        load_weights = rospy.get_param('~load_weights',None)
+        if not load_weights is None:
+            rospy.loginfo('Using pretrained weights:%s',load_weights)
         self.rl_params,car_definitions,self.env_definition = Utils.configurator(config_file)
         self.rl_params['logdir'] = Utils.check_directory(logdir) # overwrite the log directory from node params
         Utils.log_file(config_file,self.rl_params['logdir']) # Save a copy of the config file in the log directory
@@ -27,7 +32,7 @@ class RLCAR:
         self.env.check_agent_connections(self.car)
         self.env.compute_interaction(self.car) # Necessary to ensure vaild values
         self.gui.init_destination(False,self.car)
-        self.rl = RL.DQN(self.rl_params, testing=False, sample_state=self.car.get_partial_state(),load_weights=None)
+        self.rl = RL.DQN(self.rl_params, testing=False, sample_state=self.car.get_partial_state(),load_weights=load_weights)
         self.init_car()
         self.run = self.gui.runs[0] # Learn
 
